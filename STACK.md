@@ -29,7 +29,7 @@ There is no `backend/`, `frontend/`, `product/` or `back-office/` workspace.
 |---|---|
 | Run dev | none — this repo does not run |
 | Build | none |
-| Test | a caller exercises a workflow; this repo has no test command of its own yet |
+| Test | `mvn -B -ntp verify` in `infra/fixtures/java-maven-render`. GitHub: `.github/workflows/test-java-maven-render.yml` |
 | Lint / typecheck | none |
 | Review (the gate) | Claude Code: the agent-invocable `self-review` skill (`<tier>` = `high`/`medium`); better but user-invocation-only: `/code-review <tier>` |
 | Schema diagram | no data model |

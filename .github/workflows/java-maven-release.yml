@@ -1,0 +1,70 @@
+# Caller: one product version (release-please) and a retag of the image
+# java-maven-render already built for that commit. Extracted from
+# VovoSpaces .github/workflows/release.yml. Config files
+# (release-please-config.json, .release-please-manifest.json) stay in the
+# caller — they name that product's extra-files.
+name: java-maven-release
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        description: Same GHCR image java-maven-render pushed (no tag)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.releases_created }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: release
+
+  label-image:
+    name: Label the existing image with the release version
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      # A tag created with GITHUB_TOKEN does not start other workflows, so
+      # the label has to happen here. The same push to main also starts the
+      # caller's CI, which builds sha-<commit>. The two run together, so the
+      # image may not be there yet.
+      - name: Wait for the image, then add the version label
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+          SHA: ${{ github.sha }}
+          IMAGE_NAME: ${{ inputs.image_name }}
+        run: |
+          set -euo pipefail
+          src="${IMAGE_NAME}:sha-${SHA}"
+          dest="${IMAGE_NAME}:${VERSION}"
+          for _ in $(seq 1 40); do
+            if docker buildx imagetools inspect "$src" >/dev/null 2>&1; then
+              docker buildx imagetools create -t "$dest" "$src"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::${src} was not in the registry after 20 minutes. The caller's CI builds it on this same push to main."
+          exit 1

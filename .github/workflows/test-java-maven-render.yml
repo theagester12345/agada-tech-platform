@@ -1,0 +1,36 @@
+# Throwaway caller for java-maven-render. deploy stays false so this repo
+# never talks to Render. Image push still happens on a push to main, which
+# is the proof the recipe builds and the deploy job stays skipped.
+name: Test java-maven-render
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - ".github/workflows/java-maven-render.yml"
+      - ".github/workflows/test-java-maven-render.yml"
+      - "infra/scripts/render-deploy.sh"
+      - "infra/fixtures/java-maven-render/**"
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - ".github/workflows/java-maven-render.yml"
+      - ".github/workflows/test-java-maven-render.yml"
+      - "infra/scripts/render-deploy.sh"
+      - "infra/fixtures/java-maven-render/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    uses: ./.github/workflows/java-maven-render.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      working_directory: infra/fixtures/java-maven-render
+      java_version: "21"
+      image_name: ghcr.io/${{ github.repository_owner }}/java-maven-render-fixture
+      deploy: false

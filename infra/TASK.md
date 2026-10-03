@@ -36,34 +36,6 @@ Single source of truth for this side's task state. Ships because this side **par
 
 This agent builds the library. Read the VovoSpaces sources and copy what they do. Do not invent a new pipeline. Sources: `~/workspace/vovo-spaces/.github/workflows/ci.yml`, `~/workspace/vovo-spaces/infra/terraform/`, `~/workspace/vovo-spaces/infra/INFRA.md`, `~/workspace/vovo-spaces/infra/DEPLOYMENT_PLAN.md`. One test server, built and deployed from `main`. No second server and no promotion input. No secrets, account ids, or service ids in this repo. Switching VovoSpaces over to call these files is that repo's TASK-035, not a card here.
 
-### TASK-030: Platform: reusable backend workflow (Spring Boot / Maven → GHCR → Render)
-**Status:** TODO  
-**Priority:** Normal  
-**Duration:** 1 day  
-**Category:** Pipeline  
-**Depends On:** None  
-**Source:** VovoSpaces infra TASK-030  
-**Environments:** none until a caller uses it  
-**Applied:** no  
-
-**Description:** Extract the backend half of VovoSpaces' `ci.yml` (jobs `backend`, `backend-image`, `backend-deploy`) into `.github/workflows/java-maven-render.yml` with `on: workflow_call`. Its inputs replace what is hard-coded today. This matches the one test server. A second environment and promotion are added when VovoSpaces TASK-012 runs.
-
-**Technical Constraints:**
-- Inputs (at least): `working_directory` (`backend`), `java_version` (`21`), `image_name` (`ghcr.io/<owner>/<name>`), `deploy` (the switch). Secrets passed explicitly or with `secrets: inherit`: `RENDER_API_KEY`; variable `RENDER_SERVICE_ID` from the caller. Do not add a promotion input until that second environment exists.
-- Copy `~/workspace/vovo-spaces/infra/scripts/render-deploy.sh` into this repo so a caller does not need its own copy.
-- Keep: `linux/amd64`, private package, deploy by digest, `packages: write` only on the image job, no cancel on the deploy branch.
-- Also extract VovoSpaces' release workflow (release-please + image retag) as a reusable workflow, so every project releases the same way.
-- Tested by a throwaway caller before VovoSpaces switches over.
-
-**Acceptance Criteria:**
-- [ ] The workflow and the deploy script are in this repo.
-- [ ] A test caller builds, pushes and (with the switch off) skips the deploy.
-- [ ] Its inputs are documented in the platform README.
-
-**References:** `~/workspace/vovo-spaces/.github/workflows/ci.yml`; `~/workspace/vovo-spaces/infra/scripts/render-deploy.sh`.
-
----
-
 ### TASK-031: Platform: reusable frontend workflow (Next + OpenNext → Cloudflare Workers)
 **Status:** TODO  
 **Priority:** Normal  
@@ -115,6 +87,32 @@ This agent builds the library. Read the VovoSpaces sources and copy what they do
 
 ---
 
+### TASK-035: Verify java-maven-render on GitHub (image push, deploy skipped)
+**Status:** TODO  
+**Priority:** Normal  
+**Duration:** 0.5 hour  
+**Category:** Pipeline  
+**Depends On:** TASK-030  
+**Source:** TASK-030  
+**Actor:** `human` — create the public repo if needed, push `main`, read the Actions run  
+**Environments:** none  
+**Applied:** no  
+
+**Description:** Proof that only a human can make: the throwaway caller actually runs on GitHub. Copied from TASK-030.
+
+**Acceptance Criteria:**
+- [ ] A test caller builds, pushes and (with the switch off) skips the deploy.
+
+**Actor steps:**
+1. Create the public GitHub repository if it does not exist (`STACK.md` → User-run).
+2. Push `main`.
+3. Open Actions → **Test java-maven-render**. On a push to `main` that touches the recipe or fixture: `backend` is green, `backend-image` pushed a digest, `backend-deploy` is skipped.
+4. Paste the run URL on this card.
+
+**References:** `.github/workflows/test-java-maven-render.yml`; TASK-030.
+
+---
+
 ### TASK-034: Platform: tag `v1`, changelog, and the onboarding guide
 **Status:** TODO  
 **Priority:** Normal  
@@ -149,7 +147,36 @@ _None._
 
 ## COMPLETED
 
-_None yet._
+### TASK-030: Platform: reusable backend workflow (Spring Boot / Maven → GHCR → Render)
+**Status:** COMPLETED  
+**Priority:** Normal  
+**Duration:** 1 day  
+**Category:** Pipeline  
+**Depends On:** None  
+**Source:** VovoSpaces infra TASK-030  
+**Environments:** none until a caller uses it  
+**Applied:** no  
+**Questions:** none  
+**Review:** self-review (medium)  
+**Completed:** 2026-10-03  
+
+**Description:** Extract the backend half of VovoSpaces' `ci.yml` (jobs `backend`, `backend-image`, `backend-deploy`) into `.github/workflows/java-maven-render.yml` with `on: workflow_call`. Its inputs replace what is hard-coded today. This matches the one test server. A second environment and promotion are added when VovoSpaces TASK-012 runs.
+
+**Technical Constraints:**
+- Inputs (at least): `working_directory` (`backend`), `java_version` (`21`), `image_name` (`ghcr.io/<owner>/<name>`), `deploy` (the switch). Secrets passed explicitly or with `secrets: inherit`: `RENDER_API_KEY`; variable `RENDER_SERVICE_ID` from the caller. Do not add a promotion input until that second environment exists.
+- Copy `~/workspace/vovo-spaces/infra/scripts/render-deploy.sh` into this repo so a caller does not need its own copy.
+- Keep: `linux/amd64`, private package, deploy by digest, `packages: write` only on the image job, no cancel on the deploy branch.
+- Also extract VovoSpaces' release workflow (release-please + image retag) as a reusable workflow, so every project releases the same way.
+- Tested by a throwaway caller before VovoSpaces switches over.
+
+**Acceptance Criteria:**
+- [x] The workflow and the deploy script are in this repo.
+- [ ] A test caller builds, pushes and (with the switch off) skips the deploy. — proof on TASK-035 (needs a public GitHub remote)
+- [x] Its inputs are documented in the platform README.
+
+**References:** `~/workspace/vovo-spaces/.github/workflows/ci.yml`; `~/workspace/vovo-spaces/infra/scripts/render-deploy.sh`; TASK-035.
+
+---
 
 ---
 
