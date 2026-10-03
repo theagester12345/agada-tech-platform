@@ -29,12 +29,12 @@ There is no `backend/`, `frontend/`, `product/` or `back-office/` workspace.
 |---|---|
 | Run dev | none — this repo does not run |
 | Build | none |
-| Test | `mvn -B -ntp verify` in `infra/fixtures/java-maven-render`. GitHub: `.github/workflows/test-java-maven-render.yml` |
+| Test | Backend fixture: `mvn -B -ntp verify` in `infra/fixtures/java-maven-render`. Frontend fixture: `npm ci && npm run lint && npm test && npm run build` in `infra/fixtures/next-cloudflare`. Terraform: `terraform init -backend=false && terraform validate` in `infra/fixtures/terraform-modules`. GitHub: `test-java-maven-render.yml`, `test-next-cloudflare.yml` |
 | Lint / typecheck | none |
 | Review (the gate) | Claude Code: the agent-invocable `self-review` skill (`<tier>` = `high`/`medium`); better but user-invocation-only: `/code-review <tier>` |
 | Schema diagram | no data model |
 | Review questions | `AI-Question` — the token a reviewer types |
 | …collect them | `adapters/questions/scan-questions.sh <declared paths>` |
-| **User-run** — changes a live environment | `git push` of `main` once a remote exists. Creating the public GitHub repository. Branch protection on `main`. Tagging `v1` (a later card). Nothing here applies Terraform or deploys a service; callers do that |
+| **User-run** — changes a live environment | `git push` of `main` once a remote exists. Creating the public GitHub repository. Branch protection on `main`. Tagging `v1` (a later card). Nothing here applies Terraform or deploys a service; callers do that. The fixture under `infra/fixtures/terraform-modules` is validate-only. |
 
 > **User-run** lists every command that changes a live environment. This repo holds recipes. Applying them happens in the caller, and that caller's own list covers the apply.

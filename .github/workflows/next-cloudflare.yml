@@ -1,0 +1,145 @@
+# Caller: Next + OpenNext → Cloudflare Workers.
+# Extracted from VovoSpaces .github/workflows/ci.yml (frontend, frontend-deploy).
+# Inputs replace what that file hard-coded. NEXT_PUBLIC_* for a real deploy
+# come from the caller. The test-job placeholders are presence-only.
+name: next-cloudflare
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: Directory that holds package.json / package-lock.json
+        type: string
+        default: frontend
+      node_version:
+        description: Node major version. Wrangler needs at least 22.
+        type: string
+        default: "24"
+      apps:
+        description: JSON array of app names for the deploy matrix, e.g. ["client","admin"]
+        type: string
+        required: true
+      workspace_scope:
+        description: npm workspace scope, e.g. @vovospaces. Deploy runs --workspace=<scope>/<app>
+        type: string
+        required: true
+      deploy:
+        description: When true, deploy each Worker. Missing/false is off.
+        type: boolean
+        default: false
+    secrets:
+      CLOUDFLARE_DEPLOY_TOKEN:
+        description: wrangler token. Required only when deploy is true.
+        required: false
+      NEXT_PUBLIC_SUPABASE_ANON_KEY:
+        description: Inlined at deploy build time. Required only when deploy is true.
+        required: false
+
+permissions:
+  contents: read
+
+# Same cancel rule as java-maven-render: never cancel a run on main.
+concurrency:
+  group: next-cloudflare-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  frontend:
+    name: Frontend — lint + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ inputs.node_version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working_directory }}/package-lock.json
+
+      - name: Cache turbo
+        uses: actions/cache@v4
+        with:
+          path: ${{ inputs.working_directory }}/.turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      # /sign-in is statically prerendered and constructs a Supabase client.
+      # supabaseEnv() throws unless both vars are set; it only checks presence,
+      # so these placeholders are not credentials. Deploy builds use the caller.
+      - name: Build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://test.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
+        run: npm run build
+
+  frontend-deploy:
+    name: Frontend — deploy ${{ matrix.app }} Worker
+    needs: [frontend]
+    # workflow_call booleans are real booleans. == 'true' is always false.
+    # !cancelled() skips starting deploy after the run is already cancelled.
+    # A sibling app still finishes because fail-fast is false.
+    if: >-
+      !cancelled() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.deploy &&
+      needs.frontend.result == 'success'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(inputs.apps) }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ inputs.node_version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working_directory }}/package-lock.json
+
+      # An unset caller variable reads as empty, and next build would inline
+      # the empty string. Fail first. Values come from the caller, never here.
+      - name: Check build variables are set
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=0
+          for name in NEXT_PUBLIC_API_URL NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY CLOUDFLARE_ACCOUNT_ID; do
+            if [ -z "${!name}" ]; then echo "::error::$name is not set"; missing=1; fi
+          done
+          exit "$missing"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # NEXT_PUBLIC_* are inlined by next build, so they must be set here.
+      - name: Build and deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: npm run deploy:cf --workspace=${{ inputs.workspace_scope }}/${{ matrix.app }}

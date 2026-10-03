@@ -1,0 +1,13 @@
+{
+  "name": "next-cloudflare-fixture",
+  "private": true,
+  "workspaces": [
+    "apps/client"
+  ],
+  "scripts": {
+    "lint": "npm run lint --workspaces",
+    "test": "npm test --workspaces",
+    "build": "npm run build --workspaces",
+    "deploy:cf": "npm run deploy:cf --workspaces"
+  }
+}

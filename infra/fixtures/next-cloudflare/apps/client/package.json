@@ -1,0 +1,10 @@
+{
+  "name": "@agada-fixture/client",
+  "private": true,
+  "scripts": {
+    "lint": "node -e \"process.exit(0)\"",
+    "test": "node -e \"process.exit(0)\"",
+    "build": "node -e \"if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) { console.error('missing presence placeholders'); process.exit(1) }\"",
+    "deploy:cf": "node -e \"console.error('fixture must not deploy'); process.exit(1)\""
+  }
+}

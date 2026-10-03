@@ -36,57 +36,6 @@ Single source of truth for this side's task state. Ships because this side **par
 
 This agent builds the library. Read the VovoSpaces sources and copy what they do. Do not invent a new pipeline. Sources: `~/workspace/vovo-spaces/.github/workflows/ci.yml`, `~/workspace/vovo-spaces/infra/terraform/`, `~/workspace/vovo-spaces/infra/INFRA.md`, `~/workspace/vovo-spaces/infra/DEPLOYMENT_PLAN.md`. One test server, built and deployed from `main`. No second server and no promotion input. No secrets, account ids, or service ids in this repo. Switching VovoSpaces over to call these files is that repo's TASK-035, not a card here.
 
-### TASK-031: Platform: reusable frontend workflow (Next + OpenNext → Cloudflare Workers)
-**Status:** TODO  
-**Priority:** Normal  
-**Duration:** 1 day  
-**Category:** Pipeline  
-**Depends On:** None  
-**Source:** VovoSpaces infra TASK-031  
-**Environments:** none until a caller uses it  
-**Applied:** no  
-
-**Description:** Extract the `frontend` test job and the `frontend-deploy` matrix from VovoSpaces' `ci.yml` into `.github/workflows/next-cloudflare.yml` with `on: workflow_call`.
-
-**Technical Constraints:**
-- Inputs: `working_directory` (`frontend`), `node_version` (`24`; wrangler needs ≥22), `apps` (the matrix list, e.g. `["client","admin"]`), workspace package scope (`@vovospaces`), `deploy` switch. Build-time `NEXT_PUBLIC_*` values come from the caller (variables/secrets), never defaults in this repo.
-- The test build keeps presence-only Supabase placeholders (the `/sign-in` prerender).
-- Keep the ordering rule: frontend deploy waits for the backend deploy when both run in one caller.
-
-**Acceptance Criteria:**
-- [ ] The workflow is in this repo.
-- [ ] A test caller lints, tests and builds; with the switch off, deploys nothing.
-- [ ] Inputs documented in the platform README.
-
-**References:** `~/workspace/vovo-spaces/.github/workflows/ci.yml` (`frontend`, `frontend-deploy`).
-
----
-
-### TASK-032: Platform: Terraform modules (render-service, cloudflare-worker, supabase-project)
-**Status:** TODO  
-**Priority:** Normal  
-**Duration:** 1–2 days  
-**Category:** Topology  
-**Depends On:** None  
-**Source:** VovoSpaces infra TASK-032  
-**Environments:** none until a caller uses it  
-**Applied:** no  
-
-**Description:** Turn VovoSpaces `infra/terraform/main.tf`, `workers.tf` and `supabase.tf` into modules under `terraform/modules/`. Ansible roles are not part of this card.
-
-**Technical Constraints:**
-- Carry the lessons as module defaults, each with its *why* comment: `prevent_destroy` on every resource; Render `ignore_changes` on `env_vars`, `pull_request_previews_enabled`, the image tag, digest and image URL; Workers' `subdomain` block pinned (omitting it turned `*.workers.dev` off); `cloudflare_worker`, not `cloudflare_workers_script`.
-- No provider credentials inside modules; providers are configured by the caller.
-- Callers pin with `?ref=v1`. The repo is public, so a remote Terraform run can fetch it without credentials.
-
-**Acceptance Criteria:**
-- [ ] Three modules, each with a README listing inputs and outputs.
-- [ ] `terraform validate` passes on a test caller.
-
-**References:** `~/workspace/vovo-spaces/infra/terraform/*.tf`.
-
----
-
 ### TASK-035: Verify java-maven-render on GitHub (image push, deploy skipped)
 **Status:** TODO  
 **Priority:** Normal  
@@ -110,6 +59,32 @@ This agent builds the library. Read the VovoSpaces sources and copy what they do
 4. Paste the run URL on this card.
 
 **References:** `.github/workflows/test-java-maven-render.yml`; TASK-030.
+
+---
+
+### TASK-036: Verify next-cloudflare on GitHub (lint/test/build, deploy skipped)
+**Status:** TODO  
+**Priority:** Normal  
+**Duration:** 0.5 hour  
+**Category:** Pipeline  
+**Depends On:** TASK-031  
+**Source:** TASK-031  
+**Actor:** `human` — push `main` once the public repo exists, read the Actions run  
+**Environments:** none  
+**Applied:** no  
+
+**Description:** Proof that only a human can make: the throwaway frontend caller actually runs on GitHub. Copied from TASK-031.
+
+**Acceptance Criteria:**
+- [ ] A test caller lints, tests and builds; with the switch off, deploys nothing.
+
+**Actor steps:**
+1. Create the public GitHub repository if it does not exist (`STACK.md` → User-run), or reuse it after TASK-035.
+2. Push `main`.
+3. Open Actions → **Test next-cloudflare**. `frontend` is green (lint, test, build). `frontend-deploy` is skipped.
+4. Paste the run URL on this card.
+
+**References:** `.github/workflows/test-next-cloudflare.yml`; TASK-031.
 
 ---
 
@@ -146,6 +121,63 @@ _None._
 _None._
 
 ## COMPLETED
+
+### TASK-032: Platform: Terraform modules (render-service, cloudflare-worker, supabase-project)
+**Status:** COMPLETED  
+**Priority:** Normal  
+**Duration:** 1–2 days  
+**Category:** Topology  
+**Depends On:** None  
+**Source:** VovoSpaces infra TASK-032  
+**Environments:** none until a caller uses it  
+**Applied:** no  
+**Questions:** none  
+**Review:** self-review (high)  
+**Completed:** 2026-10-03  
+
+**Description:** Turn VovoSpaces `infra/terraform/main.tf`, `workers.tf` and `supabase.tf` into modules under `terraform/modules/`. Ansible roles are not part of this card.
+
+**Technical Constraints:**
+- Carry the lessons as module defaults, each with its *why* comment: `prevent_destroy` on every resource; Render `ignore_changes` on `env_vars`, `pull_request_previews_enabled`, the image tag, digest and image URL; Workers' `subdomain` block pinned (omitting it turned `*.workers.dev` off); `cloudflare_worker`, not `cloudflare_workers_script`.
+- No provider credentials inside modules; providers are configured by the caller.
+- Callers pin with `?ref=v1`. The repo is public, so a remote Terraform run can fetch it without credentials.
+
+**Acceptance Criteria:**
+- [x] Three modules, each with a README listing inputs and outputs.
+- [x] `terraform validate` passes on a test caller.
+
+**References:** `~/workspace/vovo-spaces/infra/terraform/*.tf`. Structure gate: topology in `infra/INFRA.md` approved 2026-10-03.
+
+---
+
+### TASK-031: Platform: reusable frontend workflow (Next + OpenNext → Cloudflare Workers)
+**Status:** COMPLETED  
+**Priority:** Normal  
+**Duration:** 1 day  
+**Category:** Pipeline  
+**Depends On:** None  
+**Source:** VovoSpaces infra TASK-031  
+**Environments:** none until a caller uses it  
+**Applied:** no  
+**Questions:** none  
+**Review:** self-review (medium)  
+**Completed:** 2026-10-03  
+
+**Description:** Extract the `frontend` test job and the `frontend-deploy` matrix from VovoSpaces' `ci.yml` into `.github/workflows/next-cloudflare.yml` with `on: workflow_call`.
+
+**Technical Constraints:**
+- Inputs: `working_directory` (`frontend`), `node_version` (`24`; wrangler needs ≥22), `apps` (the matrix list, e.g. `["client","admin"]`), workspace package scope (`@vovospaces`), `deploy` switch. Build-time `NEXT_PUBLIC_*` values come from the caller (variables/secrets), never defaults in this repo.
+- The test build keeps presence-only Supabase placeholders (the `/sign-in` prerender).
+- Keep the ordering rule: frontend deploy waits for the backend deploy when both run in one caller.
+
+**Acceptance Criteria:**
+- [x] The workflow is in this repo.
+- [ ] A test caller lints, tests and builds; with the switch off, deploys nothing. — proof on TASK-036 (needs a public GitHub remote). Fixture scripts passed locally.
+- [x] Inputs documented in the platform README.
+
+**References:** `~/workspace/vovo-spaces/.github/workflows/ci.yml` (`frontend`, `frontend-deploy`); TASK-036.
+
+---
 
 ### TASK-030: Platform: reusable backend workflow (Spring Boot / Maven → GHCR → Render)
 **Status:** COMPLETED  

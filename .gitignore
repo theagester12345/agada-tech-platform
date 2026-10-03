@@ -2,3 +2,7 @@
 .env.local
 .env.*.local
 **/target/
+**/node_modules/
+**/.terraform/
+*.tfstate
+*.tfstate.backup
