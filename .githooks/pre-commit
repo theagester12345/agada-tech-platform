@@ -1,0 +1,169 @@
+#!/usr/bin/env sh
+#
+# Portable git guards — AI Dev Workflow. Dependency-free and tool-agnostic:
+# runs on ANY `git commit` via `git config core.hooksPath .githooks`.
+#
+# 1) Secret guard: block real .env files / high-signal secret patterns.
+# 2) AGENTS.md Binding sync: if WORKFLOW.md / CLAUDE.md / AGENTS.md is staged,
+#    re-emit AGENTS.md from sources and stage the result (principle 3 — no relying
+#    on humans remembering to run emit-agents.sh).
+# 3) Review-question guard: block committing an unanswered reviewer-question
+#    marker. See WORKFLOW.md -> The reviewer-questions gate.
+#
+# Bypass (false positive): git commit --no-verify
+# For thorough secret scanning, add gitleaks: https://github.com/gitleaks/gitleaks
+#
+set -eu
+
+fail=0
+staged=$(git diff --cached --name-only --diff-filter=AM)
+
+# 1) Never commit a real env file. Allow templates: .env.example / .sample / .template / .dist
+bad=$(printf '%s\n' "$staged" \
+  | grep -E '(^|/)\.env(\.[^/]+)?$' \
+  | grep -vE '\.(example|sample|template|dist)$' || true)
+if [ -n "$bad" ]; then
+  echo "✖ refusing to commit env file(s) — secrets belong in a gitignored .env; commit a template (.env.example) instead:"
+  printf '    %s\n' $bad
+  fail=1
+fi
+
+# 2) High-signal secret patterns in staged additions (private keys, cloud keys, common tokens)
+if git diff --cached -U0 --no-color \
+   | grep -nE '(-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|xox[baprs]-[0-9A-Za-z-]{10,}|gh[pousr]_[0-9A-Za-z]{20,}|sk-[A-Za-z0-9]{20,})' >/dev/null 2>&1; then
+  echo "✖ a staged change looks like it contains a secret (private key / cloud key / API token)."
+  fail=1
+fi
+
+# 3) Keep AGENTS.md Bindings in sync with authored sources (WORKFLOW.md / CLAUDE.md)
+emit_needed=0
+printf '%s\n' "$staged" | grep -Eq '^WORKFLOW\.md$' && emit_needed=1
+printf '%s\n' "$staged" | grep -Eq '(^|/)CLAUDE\.md$' && emit_needed=1
+printf '%s\n' "$staged" | grep -Eq '(^|/)AGENTS\.md$' && emit_needed=1
+
+if [ "$emit_needed" -eq 1 ]; then
+  emit_script=adapters/agents/emit-agents.sh
+  if [ ! -f "$emit_script" ]; then
+    echo "✖ staged WORKFLOW.md / CLAUDE.md / AGENTS.md but $emit_script is missing."
+    echo "  Copy it from the workflow template (adapters/agents/) or re-run scaffold."
+    fail=1
+  else
+    # The file index is compiled INTO CLAUDE.md, and AGENTS.md is compiled FROM
+    # CLAUDE.md — so the index must be refreshed first or the Binding bakes in a
+    # stale listing. Missing adapter is not fatal here: the index is a convenience,
+    # unlike the AGENTS Binding below, which is a correctness requirement.
+    if [ -f adapters/index/emit-index.sh ]; then
+      bash adapters/index/emit-index.sh >/dev/null 2>&1 || \
+        echo "  ! emit-index.sh failed — file index may be stale"
+      for cl in */CLAUDE.md; do
+        [ -f "$cl" ] || continue
+        git add -- "$cl"
+      done
+    fi
+
+    echo "▶ pre-commit: re-emitting AGENTS.md from authored sources…"
+    if ! bash "$emit_script" --force; then
+      echo "✖ emit-agents.sh failed — fix the emit error before committing."
+      fail=1
+    else
+      # Include regenerated Bindings in this commit (deterministic; never hand-edited)
+      if [ -f AGENTS.md ]; then git add -- AGENTS.md; fi
+      for agents in */AGENTS.md; do
+        [ -f "$agents" ] || continue
+        git add -- "$agents"
+      done
+    fi
+  fi
+fi
+
+# 4) Never commit an unanswered reviewer question. A marker is a live question in
+#    a review that is still happening (WORKFLOW.md -> The reviewer-questions
+#    gate). Committed, it becomes a question buried in history that nobody is
+#    waiting on — the standing risk of leaving review notes in source.
+#
+#    STAGED ADDITIONS ONLY. A marker already in HEAD is somebody's open question
+#    but it is not this commit's doing, and that asymmetry is the whole reason
+#    leaving notes in source is safe: an untouched marker elsewhere in the tree
+#    never blocks an unrelated change.
+#
+#    The token is read from QUESTION_MARKER so it matches whatever this project
+#    recorded in STACK.md; the default is split so this file never matches
+#    itself. The trailing "s" is optional and the match is case-insensitive —
+#    the marker is typed live by a person, and a question lost to a one-character
+#    slip is exactly what the gate exists to remove.
+qmarker=${QUESTION_MARKER:-"AI-Q""uestion"}
+qmarker_re="${qmarker}s?:"
+qmarker_lc_1=$(printf '%s:' "$qmarker" | tr '[:upper:]' '[:lower:]')
+qmarker_lc_s=$(printf '%ss:' "$qmarker" | tr '[:upper:]' '[:lower:]')
+
+# Fast pass: which staged files carry a marker among their ADDITIONS? Read
+# line-by-line rather than word-splitting $staged — a path containing a space
+# would otherwise be torn into two non-existent paths, and the marker inside it
+# would go unseen, which is a silent miss in a guard whose whole job is not to
+# miss.
+qfiles=$(printf '%s\n' "$staged" | while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  # A doc that DEFINES the marker necessarily contains it. Same exemption list
+  # the scanner ships, for the same reason; stated cost: a real question written
+  # into one of these is not caught here — write it in the code it is about.
+  case $f in
+    adapters/questions/*|AGENTS.md|*/AGENTS.md|STACK.md) continue ;;
+  esac
+  if git diff --cached -U0 -- "$f" | grep '^+' | grep -v '^+++' \
+       | grep -iqE "$qmarker_re"; then
+    printf '%s\n' "$f"
+  fi
+done)
+
+# Slow pass, only over the files the fast pass flagged: the line each marker
+# lands on. A refusal that names a file but not a line makes the reader hunt,
+# and a guard that is tedious to clear is a guard that trains `--no-verify`.
+qbad=$(printf '%s\n' "$qfiles" | while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  n=0
+  git diff --cached -U0 --no-color -- "$f" | while IFS= read -r l; do
+    case "$l" in
+      @@*)
+        # @@ -old,count +new,count @@ — the first '+' precedes the new-side start
+        r=${l#*+}
+        n=${r%%[!0-9]*}
+        [ -n "$n" ] || n=0
+        ;;
+      +++*) : ;;
+      +*)
+        b=$(printf '%s' "${l#+}" | tr '[:upper:]' '[:lower:]')
+        case "$b" in
+          *"$qmarker_lc_s"* | *"$qmarker_lc_1"*) printf '%s:%s\n' "$f" "$n" ;;
+        esac
+        n=$((n + 1))
+        ;;
+      -*) : ;;
+      *) n=$((n + 1)) ;;
+    esac
+  done
+done)
+
+if [ -n "$qbad" ]; then
+  qn=$(printf '%s\n' "$qbad" | grep -c . || true)
+  echo "✖ refusing to commit unanswered review question(s) — $qn marker(s) added by this commit:"
+  # Read line-by-line rather than word-split: a staged path containing a space
+  # would otherwise tear across two printed lines.
+  printf '%s\n' "$qbad" | while IFS= read -r qline; do
+    [ -n "$qline" ] && printf '    %s\n' "$qline"
+  done
+  echo ""
+  echo "  Two situations, and they have different fixes:"
+  echo "   • your own unanswered questions — collect and answer them, then delete the markers:"
+  echo "       adapters/questions/scan-questions.sh <your declared paths>"
+  echo "   • a peer session's in-flight review — do NOT answer them; stage only your own files"
+  echo "       (git add <your paths>, not git add -A)"
+  echo "  WORKFLOW.md → The reviewer-questions gate"
+  fail=1
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo ""
+  echo "Blocked by .githooks/pre-commit. If this is a false positive: git commit --no-verify"
+  exit 1
+fi
+exit 0

@@ -1,0 +1,32 @@
+#!/usr/bin/env sh
+#
+# Commit-message guard — AI Dev Workflow "commit messages describe the change,
+# not the coding agent" rule. Dependency-free and tool-agnostic: runs on ANY
+# `git commit` via `git config core.hooksPath .githooks`.
+#
+# Blocks: trailers that attribute / advertise / co-author the commit to an AI
+# host or coding agent. Human Co-authored-by / Signed-off-by lines are fine.
+# Bypass (false positive): git commit --no-verify
+#
+set -eu
+
+msg_file=${1:?commit-msg hook requires the message file path}
+
+# Case-insensitive match on common agent/host attribution trailers.
+# Keep this a denylist of *tools*, not of human names.
+if grep -Ei '^[[:space:]]*(Co-authored-by|Generated-by|Generated-with|Assisted-by)[[:space:]]*:[[:space:]].*\b(Cursor|Claude Code|GitHub Copilot|Copilot|ChatGPT|OpenAI|Codex|Anthropic|Devin|Aider|Gemini|Windsurf|Codeium|Tabnine)\b' "$msg_file" >/dev/null 2>&1; then
+  echo "✖ refusing commit message — do not attribute or advertise the coding agent/host in the message."
+  echo "  Commit messages describe the change; human Co-authored-by lines are fine."
+  echo "  See WORKFLOW.md → Operating Modes (commit messages describe the change)."
+  echo "  Bypass (false positive): git commit --no-verify"
+  exit 1
+fi
+
+# Signed-off-by naming a known agent/host (not a human DCO sign-off)
+if grep -Ei '^[[:space:]]*Signed-off-by[[:space:]]*:[[:space:]].*\b(Cursor|Claude Code|GitHub Copilot|Copilot|ChatGPT|Codex|Devin|Aider)\b' "$msg_file" >/dev/null 2>&1; then
+  echo "✖ refusing commit message — Signed-off-by must not name the coding agent/host."
+  echo "  Bypass (false positive): git commit --no-verify"
+  exit 1
+fi
+
+exit 0

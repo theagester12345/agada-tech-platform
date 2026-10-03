@@ -1,0 +1,25 @@
+#!/usr/bin/env sh
+#
+# Strip AI host/agent attribution trailers that some hosts inject into
+# `git commit` (e.g. Co-authored-by: Cursor). Runs before commit-msg.
+# Portable — denylist of tools, not human names. See WORKFLOW.md → Operating Modes.
+#
+# Wired via `git config core.hooksPath .githooks` (scaffold sets this).
+#
+set -eu
+
+msg_file=${1:?prepare-commit-msg requires the message file path}
+
+# Remove attribution trailers naming known coding agents/hosts (Linux sed).
+# Also drop blank lines left at EOF from stripping.
+tmp=$(mktemp)
+grep -Eiv '^[[:space:]]*(Co-authored-by|Generated-by|Generated-with|Assisted-by|Made-with)[[:space:]]*:[[:space:]].*\b(Cursor|Claude Code|GitHub Copilot|Copilot|ChatGPT|OpenAI|Codex|Anthropic|Devin|Aider|Gemini|Windsurf|Codeium|Tabnine)\b' "$msg_file" \
+  | grep -Eiv '^[[:space:]]*Signed-off-by[[:space:]]*:[[:space:]].*\b(Cursor|Claude Code|GitHub Copilot|Copilot|ChatGPT|Codex|Devin|Aider)\b' \
+  > "$tmp" || true
+# If grep filtered everything oddly, keep original — but normally we just stripped lines
+if [ -s "$tmp" ] || [ ! -s "$msg_file" ]; then
+  cat "$tmp" > "$msg_file"
+fi
+rm -f "$tmp"
+
+exit 0
