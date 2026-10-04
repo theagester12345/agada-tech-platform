@@ -1,6 +1,6 @@
 # Onboard a project
 
-Replace `<owner>/<repo>` with this library once the public GitHub repo exists. Replace every other `<…>` with values from the caller. Do not copy a secret or account id into this repository.
+This library is `theagester12345/agada-tech-platform`. Replace every other `<…>` with values from the caller. Do not copy a secret or account id into this repository.
 
 Onboarding is two files in the **caller**, about 35 lines, then the names below. The original “two secrets” line was the pipeline pair (`RENDER_API_KEY`, `CLOUDFLARE_DEPLOY_TOKEN`). A full stack also needs the Terraform tokens and the public Next values. Set them in this order. Names only.
 
@@ -44,7 +44,7 @@ on:
   pull_request: { branches: [main] }
 jobs:
   backend:
-    uses: <owner>/<repo>/.github/workflows/java-maven-render.yml@v1
+    uses: theagester12345/agada-tech-platform/.github/workflows/java-maven-render.yml@v1
     permissions: { contents: read, packages: write }
     with:
       working_directory: backend
@@ -54,7 +54,7 @@ jobs:
     secrets: inherit
   frontend:
     needs: backend
-    uses: <owner>/<repo>/.github/workflows/next-cloudflare.yml@v1
+    uses: theagester12345/agada-tech-platform/.github/workflows/next-cloudflare.yml@v1
     with:
       working_directory: frontend
       node_version: "24"
@@ -68,18 +68,18 @@ jobs:
 
 ```hcl
 module "api" {
-  source                 = "git::https://github.com/<owner>/<repo>.git//terraform/modules/render-service?ref=v1"
+  source                 = "git::https://github.com/theagester12345/agada-tech-platform.git//terraform/modules/render-service?ref=v1"
   name                   = "<service>"
   image_url              = "ghcr.io/<owner>/<name>"
   registry_credential_id = var.render_registry_credential_id
 }
 module "client" {
-  source     = "git::https://github.com/<owner>/<repo>.git//terraform/modules/cloudflare-worker?ref=v1"
+  source     = "git::https://github.com/theagester12345/agada-tech-platform.git//terraform/modules/cloudflare-worker?ref=v1"
   account_id = var.cloudflare_account_id
   name       = "<worker>"
 }
 module "auth" {
-  source         = "git::https://github.com/<owner>/<repo>.git//terraform/modules/supabase-project?ref=v1"
+  source         = "git::https://github.com/theagester12345/agada-tech-platform.git//terraform/modules/supabase-project?ref=v1"
   project_ref    = var.supabase_project_ref
   site_url       = var.site_url
   uri_allow_list = var.uri_allow_list

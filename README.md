@@ -4,7 +4,7 @@ A public library of deploy recipes. It runs nothing of its own. A project calls 
 
 Onboard from [`ONBOARDING.md`](ONBOARDING.md). Pins and the versioning rule are in [`CHANGELOG.md`](CHANGELOG.md).
 
-Local path: `~/workspace/agada-tech-platform`. The GitHub owner is not chosen yet.
+Local path: `~/workspace/agada-tech-platform`. GitHub: [`theagester12345/agada-tech-platform`](https://github.com/theagester12345/agada-tech-platform).
 
 ```
 .github/workflows/     reusable workflows
@@ -22,7 +22,7 @@ Caller job (the owner and pin change once this repo is public and tagged):
 ```yaml
 jobs:
   backend:
-    uses: <owner>/<repo>/.github/workflows/java-maven-render.yml@v1
+    uses: theagester12345/agada-tech-platform/.github/workflows/java-maven-render.yml@v1
     permissions:
       contents: read
       packages: write
@@ -66,7 +66,7 @@ on:
     branches: [main]
 jobs:
   release:
-    uses: <owner>/<repo>/.github/workflows/java-maven-release.yml@v1
+    uses: theagester12345/agada-tech-platform/.github/workflows/java-maven-release.yml@v1
     permissions:
       contents: write
       pull-requests: write
@@ -88,11 +88,11 @@ When a caller runs both recipes, the frontend job waits on the backend job so an
 ```yaml
 jobs:
   backend:
-    uses: <owner>/<repo>/.github/workflows/java-maven-render.yml@v1
+    uses: theagester12345/agada-tech-platform/.github/workflows/java-maven-render.yml@v1
     # ...
   frontend:
     needs: backend
-    uses: <owner>/<repo>/.github/workflows/next-cloudflare.yml@v1
+    uses: theagester12345/agada-tech-platform/.github/workflows/next-cloudflare.yml@v1
     with:
       working_directory: frontend
       node_version: "24"
@@ -127,20 +127,20 @@ Each module has its own README for inputs and outputs. Providers are configured 
 
 ```hcl
 module "api" {
-  source                 = "git::https://github.com/<owner>/<repo>.git//terraform/modules/render-service?ref=v1"
+  source                 = "git::https://github.com/theagester12345/agada-tech-platform.git//terraform/modules/render-service?ref=v1"
   name                   = "<service>"
   image_url              = "ghcr.io/<owner>/<name>"
   registry_credential_id = var.render_registry_credential_id
 }
 
 module "client" {
-  source     = "git::https://github.com/<owner>/<repo>.git//terraform/modules/cloudflare-worker?ref=v1"
+  source     = "git::https://github.com/theagester12345/agada-tech-platform.git//terraform/modules/cloudflare-worker?ref=v1"
   account_id = var.cloudflare_account_id
   name       = "<worker>"
 }
 
 module "auth" {
-  source         = "git::https://github.com/<owner>/<repo>.git//terraform/modules/supabase-project?ref=v1"
+  source         = "git::https://github.com/theagester12345/agada-tech-platform.git//terraform/modules/supabase-project?ref=v1"
   project_ref    = var.supabase_project_ref
   site_url       = var.site_url
   uri_allow_list = var.uri_allow_list

@@ -1,6 +1,8 @@
 # Throwaway caller for java-maven-render. deploy stays false so this repo
 # never talks to Render. Image push still happens on a push to main, which
 # is the proof the recipe builds and the deploy job stays skipped.
+# Path filters skip a docs-only push (seen on the first main push). This
+# file is in the filter so a later push can still prove the image job.
 name: Test java-maven-render
 
 on:

@@ -7,7 +7,7 @@ This repo is a library. It runs no application. Callers (VovoSpaces, and later o
 | Project name | `Agada Tech Platform` |
 | Shape | library — no independently buildable application side |
 | Local path | `~/workspace/agada-tech-platform` |
-| GitHub | not chosen yet. The repo is public when it is created (VovoSpaces DEPLOYMENT_PLAN D8) |
+| GitHub | public: `theagester12345/agada-tech-platform` (VovoSpaces DEPLOYMENT_PLAN D8). Move into an Agada org later if the company exists. |
 | **Shared** | |
 | Task tracker | Plane, when this repo is given its own key prefix. Do not reuse VovoSpaces' `IN-` prefix |
 | Persona — infra | `Platform` |

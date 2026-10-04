@@ -36,32 +36,6 @@ Single source of truth for this side's task state. Ships because this side **par
 
 This agent builds the library. Read the VovoSpaces sources and copy what they do. Do not invent a new pipeline. Sources: `~/workspace/vovo-spaces/.github/workflows/ci.yml`, `~/workspace/vovo-spaces/infra/terraform/`, `~/workspace/vovo-spaces/infra/INFRA.md`, `~/workspace/vovo-spaces/infra/DEPLOYMENT_PLAN.md`. One test server, built and deployed from `main`. No second server and no promotion input. No secrets, account ids, or service ids in this repo. Switching VovoSpaces over to call these files is that repo's TASK-035, not a card here.
 
-### TASK-035: Verify java-maven-render on GitHub (image push, deploy skipped)
-**Status:** TODO  
-**Priority:** Normal  
-**Duration:** 0.5 hour  
-**Category:** Pipeline  
-**Depends On:** TASK-030  
-**Source:** TASK-030  
-**Actor:** `human` — create the public repo if needed, push `main`, read the Actions run  
-**Environments:** none  
-**Applied:** no  
-
-**Description:** Proof that only a human can make: the throwaway caller actually runs on GitHub. Copied from TASK-030.
-
-**Acceptance Criteria:**
-- [ ] A test caller builds, pushes and (with the switch off) skips the deploy.
-
-**Actor steps:**
-1. Create the public GitHub repository if it does not exist (`STACK.md` → User-run).
-2. Push `main`.
-3. Open Actions → **Test java-maven-render**. On a push to `main` that touches the recipe or fixture: `backend` is green, `backend-image` pushed a digest, `backend-deploy` is skipped.
-4. Paste the run URL on this card.
-
-**References:** `.github/workflows/test-java-maven-render.yml`; TASK-030.
-
----
-
 ### TASK-036: Verify next-cloudflare on GitHub (lint/test/build, deploy skipped)
 **Status:** TODO  
 **Priority:** Normal  
@@ -116,7 +90,33 @@ This agent builds the library. Read the VovoSpaces sources and copy what they do
 
 ## IN_PROGRESS
 
-_None._
+### TASK-035: Verify java-maven-render on GitHub (image push, deploy skipped)
+**Status:** IN_PROGRESS  
+**Priority:** Normal  
+**Duration:** 0.5 hour  
+**Category:** Pipeline  
+**Depends On:** TASK-030  
+**Source:** TASK-030  
+**Actor:** `human` — create the public repo if needed, push `main`, read the Actions run  
+**Environments:** none  
+**Applied:** no  
+
+**Description:** Proof that only a human can make: the throwaway caller actually runs on GitHub. Copied from TASK-030.
+
+**Acceptance Criteria:**
+- [ ] A test caller builds, pushes and (with the switch off) skips the deploy.
+
+**Actor steps:**
+1. Create the public GitHub repository if it does not exist (`STACK.md` → User-run).
+2. Push `main`.
+3. Open Actions → **Test java-maven-render**. On a push to `main` that touches the recipe or fixture: `backend` is green, `backend-image` pushed a digest, `backend-deploy` is skipped.
+4. Paste the run URL on this card.
+
+**Run:** https://github.com/theagester12345/agada-tech-platform/actions/runs/37217022204 (`workflow_dispatch`). `backend` green. Image and deploy both skipped — image only runs on a push to `main`.
+
+**References:** `.github/workflows/test-java-maven-render.yml`; TASK-030.
+
+---
 
 ## BLOCKED
 
