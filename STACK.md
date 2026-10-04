@@ -35,6 +35,6 @@ There is no `backend/`, `frontend/`, `product/` or `back-office/` workspace.
 | Schema diagram | no data model |
 | Review questions | `AI-Question` — the token a reviewer types |
 | …collect them | `adapters/questions/scan-questions.sh <declared paths>` |
-| **User-run** — changes a live environment | `git push` of `main` once a remote exists. Creating the public GitHub repository. Branch protection on `main`. Tagging `v1` (a later card). Nothing here applies Terraform or deploys a service; callers do that. The fixture under `infra/fixtures/terraform-modules` is validate-only. |
+| **User-run** — changes a live environment | Create the public GitHub repository. `git push` of `main` once a remote exists. Branch protection on `main`. Tag and push the platform pin: `git tag -a v1.0.0 -m "v1.0.0"` then `git tag -f v1 v1.0.0` then `git push origin v1.0.0 v1`. Nothing here applies Terraform or deploys a service; callers do that. The fixture under `infra/fixtures/terraform-modules` is validate-only. |
 
 > **User-run** lists every command that changes a live environment. This repo holds recipes. Applying them happens in the caller, and that caller's own list covers the apply.

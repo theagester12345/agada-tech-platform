@@ -2,6 +2,8 @@
 
 A public library of deploy recipes. It runs nothing of its own. A project calls a workflow or a Terraform module and pins a version (`@v1`). Credentials, account ids and service ids stay in the caller. None of them belong in this repo.
 
+Onboard from [`ONBOARDING.md`](ONBOARDING.md). Pins and the versioning rule are in [`CHANGELOG.md`](CHANGELOG.md).
+
 Local path: `~/workspace/agada-tech-platform`. The GitHub owner is not chosen yet.
 
 ```

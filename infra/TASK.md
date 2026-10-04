@@ -88,27 +88,29 @@ This agent builds the library. Read the VovoSpaces sources and copy what they do
 
 ---
 
-### TASK-034: Platform: tag `v1`, changelog, and the onboarding guide
+### TASK-037: Tag platform `v1` on the public GitHub repo
 **Status:** TODO  
 **Priority:** Normal  
-**Duration:** 0.5 day  
+**Duration:** 0.5 hour  
 **Category:** Pipeline  
-**Depends On:** TASK-030, TASK-031, TASK-032  
-**Source:** VovoSpaces infra TASK-034  
+**Depends On:** TASK-034  
+**Source:** TASK-034  
+**Actor:** `human` — create the public repo if needed, push `main`, create and push the tags  
 **Environments:** none  
 **Applied:** no  
 
-**Description:** This is the platform's own version (`@v1`, what callers pin), not a product's release version. Make the platform consumable: a `v1` tag, a changelog, and a guide that onboards a project in two files, about 35 lines, and two secrets. The public GitHub repo has to exist before the tag.
-
-**Technical Constraints:**
-- Versioning rule written down: breaking input changes bump the major (`v2`); fixes are `v1.x`, and a moving `v1` tag points at the latest `v1.x`.
-- The guide lists every secret and variable a caller sets, by name only, and the order to set them.
+**Description:** Proof that only a human can make: the moving `v1` pin exists on the public repo. Copied from TASK-034.
 
 **Acceptance Criteria:**
 - [ ] `v1` exists, with a changelog entry.
-- [ ] The onboarding guide exists and names every input, secret and variable.
 
-**References:** TASK-030, TASK-031, TASK-032.
+**Actor steps:**
+1. Create the public GitHub repository if it does not exist (`STACK.md` → User-run), or reuse it after TASK-035.
+2. Commit and push `main` so `CHANGELOG.md` is on the remote.
+3. Run the User-run tag commands from `STACK.md`: `git tag -a v1.0.0 -m "v1.0.0"` then `git tag -f v1 v1.0.0` then `git push origin v1.0.0 v1`.
+4. Paste the tag URLs on this card.
+
+**References:** `CHANGELOG.md`; `STACK.md` → User-run; TASK-034.
 
 ---
 
@@ -121,6 +123,31 @@ _None._
 _None._
 
 ## COMPLETED
+
+### TASK-034: Platform: tag `v1`, changelog, and the onboarding guide
+**Status:** COMPLETED  
+**Priority:** Normal  
+**Duration:** 0.5 day  
+**Category:** Pipeline  
+**Depends On:** TASK-030, TASK-031, TASK-032  
+**Source:** VovoSpaces infra TASK-034  
+**Environments:** none  
+**Applied:** no  
+**Questions:** none  
+**Review:** self-review (medium)  
+**Completed:** 2026-10-03  
+
+**Description:** This is the platform's own version (`@v1`, what callers pin), not a product's release version. Make the platform consumable: a `v1` tag, a changelog, and a guide that onboards a project in two files, about 35 lines, and two secrets. The public GitHub repo has to exist before the tag.
+
+**Technical Constraints:**
+- Versioning rule written down: breaking input changes bump the major (`v2`); fixes are `v1.x`, and a moving `v1` tag points at the latest `v1.x`.
+- The guide lists every secret and variable a caller sets, by name only, and the order to set them.
+
+**Acceptance Criteria:**
+- [ ] `v1` exists, with a changelog entry. — proof on TASK-037 (needs a public GitHub remote). Changelog entry is in `CHANGELOG.md`.
+- [x] The onboarding guide exists and names every input, secret and variable.
+
+**References:** TASK-030, TASK-031, TASK-032; TASK-037.
 
 ### TASK-032: Platform: Terraform modules (render-service, cloudflare-worker, supabase-project)
 **Status:** COMPLETED  

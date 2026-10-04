@@ -82,7 +82,9 @@ Names only. Values stay in each caller.
 - **Frontend recipe:** `.github/workflows/next-cloudflare.yml`. Jobs `frontend` (lint, test, build with presence-only Supabase placeholders) and `frontend-deploy` (matrix of Workers, only when `deploy` is true). Build-time `NEXT_PUBLIC_*` for a real deploy come from the caller. When both recipes run in one caller, that caller waits on the backend job.
 - **Throwaway callers:** `.github/workflows/test-java-maven-render.yml` and `.github/workflows/test-next-cloudflare.yml`, both `deploy: false`.
 - **Terraform modules:** `terraform/modules/{render-service,cloudflare-worker,supabase-project}`. Callers pin with `?ref=v1`. Validate only: `terraform init -backend=false && terraform validate` in `infra/fixtures/terraform-modules`.
-- **Apply:** this repo does not deploy a service and does not apply Terraform. Callers do. User-run here is creating the public GitHub repo, pushing `main`, and later tagging `v1`.
+- **Version:** [`CHANGELOG.md`](../CHANGELOG.md). Callers pin `@v1` / `?ref=v1`. Breaking input changes bump the major.
+- **Onboard:** [`ONBOARDING.md`](../ONBOARDING.md) — two caller files and the secret/variable names, in order.
+- **Apply:** this repo does not deploy a service and does not apply Terraform. Callers do. User-run here is creating the public GitHub repo, pushing `main`, and tagging `v1`.
 
 ## Ownership
 **This side's agent owns this file** ([`ARCHITECT.md`](./ARCHITECT.md)) and updates it **in the same change** as the deployment-architecture decision it records (e.g. "frontend → Cloudflare Pages", "add a staging env"). Every other side **reads** it — this is where they learn where things run.

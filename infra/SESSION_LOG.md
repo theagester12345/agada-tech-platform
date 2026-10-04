@@ -14,6 +14,11 @@ Append entries chronologically before the `_Last Updated:_` line and bump that d
 
 ---
 
+## [2026-10-03] - onboarding lists every name, not two secrets
+**Decision / Lesson:** The onboarding guide lists every secret and variable a caller sets. It does not stop at “two secrets.”
+**Reasoning:** DEPLOYMENT_PLAN said onboarding was two files, about 35 lines, and two secrets. The extracted recipes need more names (`NEXT_PUBLIC_*`, Terraform tokens). Hiding them would make the first caller fail. The two files stay; the name list is complete.
+**Trigger criterion:** judgement call
+
 ## [2026-10-03] - supabase-project names settings, not a project
 **Decision / Lesson:** Keep the module path `terraform/modules/supabase-project` even though the resource is `supabase_settings`. Do not add `supabase_project`.
 **Reasoning:** The card and the published path are `supabase-project`. Renaming after callers pin `?ref=v1` is a breaking source change. `supabase_project` would put `database_password` in state, which is the rejected alternative.
