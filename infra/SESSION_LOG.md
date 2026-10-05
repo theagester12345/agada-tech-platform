@@ -39,6 +39,11 @@ Append entries chronologically before the `_Last Updated:_` line and bump that d
 **Reasoning:** Rejected `ubuntu-latest`: GitHub moves it between 2026-10-19 and 2026-11-19, so for a month a caller's build lands on either image at random, with no platform release behind the change. Rejected `ubuntu-24.04`: it pins to the image being retired, so the bump is owed again soon. Rejected latest action majors (checkout v7, setup-node v7, cache v6): two or three majors of breaking changes for no gain, since only Node 24 was needed. Each chosen major's release notes and `action.yml` were checked against the inputs we pass. actionlint 1.7.12 does not know `ubuntu-26.04` or `job.workflow_repository` / `job.workflow_sha`; both are documented by GitHub (actionlint issue 705 / PR 707), so those two messages are tool lag, not defects.
 **Trigger criterion:** judgement call
 
+## [2026-10-05] - declined a `stage` input that would split tests from shipping
+**Decision / Lesson:** VovoSpaces asked for a `stage` input (`all` | `test` | `ship`, v1.1.0) so a caller could hold both deploys until both test suites pass (its D13). Declined by the user after vetting. The caller runs the two recipes side by side instead, each shipping on its own tests, and keeps API changes compatible with the website already live. The card (TASK-039) was removed unsynced.
+**Reasoning:** Testing before deploying is universal, and both shapes keep it. Holding both halves on both suites is a project preference (VovoSpaces TASK-005), not a standard. It only covers test failures, not a failed second deploy. And VovoSpaces is a pre-production test server. Rejected: building the input now (half a day, permanent extra branching in two recipes, for a gate that is optional). Rejected: the ONBOARDING shape where `frontend` needs `backend`, because a red backend then skips the frontend tests; ONBOARDING, README and INFRA.md now show the side-by-side shape. Revisit when VovoSpaces plans production. The design was worked out and is recoverable from this conversation's card: put the stage in the concurrency group, make the deploy job check `!cancelled()`, and fail on an invalid value.
+**Trigger criterion:** judgement call
+
 ---
 
 _Last Updated: 2026-10-05_

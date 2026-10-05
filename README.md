@@ -83,7 +83,7 @@ jobs:
 
 Reusable workflow: `.github/workflows/next-cloudflare.yml`.
 
-When a caller runs both recipes, the frontend job waits on the backend job so an API-contract change does not reach users first:
+When a caller runs both recipes, it calls them side by side, with no `needs:` between them. Each half ships on its own tests. A `needs: backend` would skip the frontend tests whenever the backend is red. The caller keeps API changes compatible with the website already live, so either half can deploy first:
 
 ```yaml
 jobs:
@@ -91,7 +91,6 @@ jobs:
     uses: theagester12345/agada-tech-platform/.github/workflows/java-maven-render.yml@v1
     # ...
   frontend:
-    needs: backend
     uses: theagester12345/agada-tech-platform/.github/workflows/next-cloudflare.yml@v1
     with:
       working_directory: frontend

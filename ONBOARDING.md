@@ -35,7 +35,7 @@ Apply is the caller’s command, not this repo’s.
 
 ## 3. Two files in the caller
 
-`.github/workflows/ci.yml`:
+`.github/workflows/ci.yml`. The two jobs run side by side; do not add `needs:` between them. Each half ships on its own tests, so keep API changes compatible with the website already live:
 
 ```yaml
 name: CI
@@ -53,7 +53,6 @@ jobs:
       deploy: ${{ vars.DEPLOY_BACKEND == 'true' }}
     secrets: inherit
   frontend:
-    needs: backend
     uses: theagester12345/agada-tech-platform/.github/workflows/next-cloudflare.yml@v1
     with:
       working_directory: frontend

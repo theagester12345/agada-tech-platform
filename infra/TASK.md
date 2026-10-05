@@ -46,6 +46,44 @@ _None._
 
 ## COMPLETED
 
+### TASK-040: Protect `main` on the platform repo
+**Status:** COMPLETED  
+**Priority:** Normal  
+**Duration:** 15 minutes  
+**Category:** Security  
+**Depends On:** None  
+**Source:** VovoSpaces infra TASK-007 (item moved here 2026-10-05)  
+**Actor:** `human` — the repo owner changes a GitHub setting  
+**Environments:** the GitHub repo `theagester12345/agada-tech-platform`  
+**Applied:** GitHub repo 2026-10-05  
+**Questions:** none  
+**Review:** human observation — the card's decisions were the deliverable; no source  
+**Completed:** 2026-10-05  
+
+**Description:** `GET https://api.github.com/repos/theagester12345/agada-tech-platform/branches/main` returns `"protected": false` (read 2026-10-05). The repo is public, so branch protection is free. Protect `main` against force-pushes and deletion.
+
+**Decisions (made on the card, before the click):**
+- **No required status checks, for now.** Both test callers are path-filtered. A required check that a change does not trigger never reports, so a docs-only PR would wait on it forever. Revisit only if the callers lose their path filters.
+- **No "require a pull request"; the owner may still push to `main` directly.** Release commits and tags are pushed by hand today (`STACK.md` → User-run). Requiring PRs would block that, and the release process would have to change first. That is not worth it for a single-owner repo.
+- **Tags are out of scope.** `v1` is a moving tag pushed with `-f`. A tag ruleset would have to exempt it, so do not add one here.
+- **Classic rule, not a ruleset.** The done-check reads the branch API's `protected` field, which a classic rule sets reliably.
+
+**Acceptance Criteria:**
+- [x] The API call above returns `"protected": true`.
+- [x] A force-push to `main` and deleting `main` are both refused (the rule's defaults; no need to try them).
+
+**Actor steps:**
+1. Open https://github.com/theagester12345/agada-tech-platform/settings/branches → **Add classic branch protection rule**.
+2. Branch name pattern: `main`.
+3. Leave every box unticked. Unticked "Allow force pushes" and "Allow deletions" is what blocks them. Do not tick "Require a pull request" or "Require status checks" (see Decisions).
+4. **Create**. Then tell the agent, which reads the API and closes this card.
+
+**Result (read 2026-10-05):** the branch API returns `"protected": true`, `required_status_checks.enforcement_level: "off"`, no contexts. That matches the decisions above.
+
+**References:** `STACK.md` → User-run ("Branch protection on `main`"); VovoSpaces infra TASK-007.
+
+---
+
 ### TASK-038: Recipes: move off Node 20 actions and pin the runner image
 **Status:** COMPLETED  
 **Priority:** High  
