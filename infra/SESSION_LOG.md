@@ -34,6 +34,11 @@ Append entries chronologically before the `_Last Updated:_` line and bump that d
 **Reasoning:** The callers' `push` trigger is limited to recipe and fixture paths. A push that only changes docs starts nothing, and that looks like a broken pipeline. TASK-036's original steps assumed a push would run it.
 **Trigger criterion:** gotcha
 
+## [2026-10-05] - pin ubuntu-26.04, and take the lowest Node 24 action majors
+**Decision / Lesson:** Recipes run on `ubuntu-26.04`, pinned. Each action moves to its *first* Node 24 major (checkout/setup-java/setup-node/cache v5, buildx/login v4, build-push v7), not the latest.
+**Reasoning:** Rejected `ubuntu-latest`: GitHub moves it between 2026-10-19 and 2026-11-19, so for a month a caller's build lands on either image at random, with no platform release behind the change. Rejected `ubuntu-24.04`: it pins to the image being retired, so the bump is owed again soon. Rejected latest action majors (checkout v7, setup-node v7, cache v6): two or three majors of breaking changes for no gain, since only Node 24 was needed. Each chosen major's release notes and `action.yml` were checked against the inputs we pass. actionlint 1.7.12 does not know `ubuntu-26.04` or `job.workflow_repository` / `job.workflow_sha`; both are documented by GitHub (actionlint issue 705 / PR 707), so those two messages are tool lag, not defects.
+**Trigger criterion:** judgement call
+
 ---
 
 _Last Updated: 2026-10-05_

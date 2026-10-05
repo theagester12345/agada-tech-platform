@@ -80,6 +80,7 @@ Names only. Values stay in each caller.
 - **Recipe:** `.github/workflows/java-maven-render.yml` (`workflow_call`). Jobs `backend` (`mvn verify`), `backend-image` (push to GHCR on a push to `main`), `backend-deploy` (Render, only when `deploy` is true). Deploy script: `infra/scripts/render-deploy.sh`, checked out from this repo so the caller does not copy it.
 - **Release recipe:** `.github/workflows/java-maven-release.yml`. release-please in the caller, then retag `:sha-<commit>` to `:<version>`. No second image build.
 - **Frontend recipe:** `.github/workflows/next-cloudflare.yml`. Jobs `frontend` (lint, test, build with presence-only Supabase placeholders) and `frontend-deploy` (matrix of Workers, only when `deploy` is true). Build-time `NEXT_PUBLIC_*` for a real deploy come from the caller. When both recipes run in one caller, that caller waits on the backend job.
+- **Runner:** every recipe job runs on `ubuntu-26.04`, pinned. Not `ubuntu-latest`: that label moves under callers without a platform release. Moving to a newer image is a platform `v1.x` change.
 - **Throwaway callers:** `.github/workflows/test-java-maven-render.yml` and `.github/workflows/test-next-cloudflare.yml`, both `deploy: false`.
 - **Terraform modules:** `terraform/modules/{render-service,cloudflare-worker,supabase-project}`. Callers pin with `?ref=v1`. Validate only: `terraform init -backend=false && terraform validate` in `infra/fixtures/terraform-modules`.
 - **Version:** [`CHANGELOG.md`](../CHANGELOG.md). Callers pin `@v1` / `?ref=v1`. Breaking input changes bump the major.
@@ -95,4 +96,4 @@ If a project has **no `infra/` directory**, don't create one just for this — t
 
 ---
 
-_Last Updated: 2026-10-03_
+_Last Updated: 2026-10-05_

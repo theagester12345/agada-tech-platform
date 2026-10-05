@@ -43,25 +43,27 @@ concurrency:
   group: next-cloudflare-${{ github.repository }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# Runner is pinned, not ubuntu-latest: a caller's build machine should change
+# only when this platform ships a release, never under a moving GitHub label.
 jobs:
   frontend:
     name: Frontend — lint + build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: ${{ inputs.working_directory }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Node.js ${{ inputs.node_version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ inputs.node_version }}
           cache: npm
           cache-dependency-path: ${{ inputs.working_directory }}/package-lock.json
 
       - name: Cache turbo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ inputs.working_directory }}/.turbo
           key: turbo-${{ runner.os }}-${{ github.sha }}
@@ -98,7 +100,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       inputs.deploy &&
       needs.frontend.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -107,10 +109,10 @@ jobs:
       run:
         working-directory: ${{ inputs.working_directory }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Node.js ${{ inputs.node_version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ inputs.node_version }}
           cache: npm

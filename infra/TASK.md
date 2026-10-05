@@ -36,34 +36,10 @@ Single source of truth for this side's task state. Ships because this side **par
 
 This agent builds the library. Read the VovoSpaces sources and copy what they do. Do not invent a new pipeline. Sources: `~/workspace/vovo-spaces/.github/workflows/ci.yml`, `~/workspace/vovo-spaces/infra/terraform/`, `~/workspace/vovo-spaces/infra/INFRA.md`, `~/workspace/vovo-spaces/infra/DEPLOYMENT_PLAN.md`. One test server, built and deployed from `main`. No second server and no promotion input. No secrets, account ids, or service ids in this repo. Switching VovoSpaces over to call these files is that repo's TASK-035, not a card here.
 
-### TASK-037: Tag platform `v1` on the public GitHub repo
-**Status:** IN_PROGRESS  
-**Priority:** Normal  
-**Duration:** 0.5 hour  
-**Category:** Pipeline  
-**Depends On:** TASK-034  
-**Source:** TASK-034  
-**Actor:** `human` — create the public repo if needed, push `main`, create and push the tags  
-**Environments:** none  
-**Applied:** no  
-
-**Description:** Proof that only a human can make: the moving `v1` pin exists on the public repo. Copied from TASK-034.
-
-**Acceptance Criteria:**
-- [ ] `v1` exists, with a changelog entry.
-
-**Actor steps:**
-1. The public repo exists (TASK-035) and `CHANGELOG.md` is already on `origin/main`. Commit and push any pending doc changes first, so the tag sits on the latest `main`.
-2. Confirm `git status` is clean and `main` matches `origin/main`.
-3. Run the User-run tag commands from `STACK.md`: `git tag -a v1.0.0 -m "v1.0.0"` then `git tag -f v1 v1.0.0` then `git push origin v1.0.0 v1`.
-4. Paste the tag URLs on this card.
-
-**References:** `CHANGELOG.md`; `STACK.md` → User-run; TASK-034.
-
----
+## IN_PROGRESS
 
 ### TASK-038: Recipes: move off Node 20 actions and pin the runner image
-**Status:** TODO  
+**Status:** IN_PROGRESS  
 **Priority:** High  
 **Duration:** 2 hours  
 **Category:** Pipeline  
@@ -71,12 +47,15 @@ This agent builds the library. Read the VovoSpaces sources and copy what they do
 **Source:** TASK-036  
 **Environments:** none in this repo; every caller pinned to `@v1`  
 **Applied:** no  
+**Questions:** none  
+**Review:** self-review (medium) — 2 card-format findings, fixed; no code findings  
 
-**Description:** The TASK-036 run (https://github.com/theagester12345/agada-tech-platform/actions/runs/37312430650) raised two annotations against the recipes. (1) Warning: `actions/cache@v4`, `actions/checkout@v4`, `actions/setup-node@v4` (and likely `actions/setup-java@v4`) target Node 20 and are being forced onto Node 24. (2) Notice: `ubuntu-latest` migrates to Ubuntu 26 from **2026-10-19**. Every caller on `@v1` inherits both, so this is a `v1.x` fix, not a caller change.
+**Description:** The TASK-036 run (https://github.com/theagester12345/agada-tech-platform/actions/runs/37312430650) raised two annotations against the recipes. (1) Warning: `actions/cache@v4`, `actions/checkout@v4`, `actions/setup-node@v4` target Node 20 (as do `actions/setup-java@v4` and the Docker v3/v6 actions) and are being forced onto Node 24. (2) Notice: `ubuntu-latest` migrates to Ubuntu 26 from **2026-10-19**. Every caller on `@v1` inherits both, so this is a `v1.x` fix, not a caller change.
 
 **Technical Constraints:**
 - Bump only to action majors whose release notes declare Node 24; keep inputs unchanged so it stays a `v1.x` fix.
 - Runner: decide between pinning `ubuntu-24.04` (stable now, needs a later bump) and staying on `ubuntu-latest` after proving the recipes on Ubuntu 26. Record the choice in `infra/SESSION_LOG.md` with the rejected option.
+- **Spec correction (2026-10-05):** the runner is pinned to `ubuntu-26.04`, a third option the card did not name. GitHub's notice (runner-images issue 14748) offers that label, and its rollout runs 2026-10-19 → 2026-11-19, so `ubuntu-latest` would land callers on either image at random for a month. Both named options are rejected in `infra/SESSION_LOG.md` (2026-10-05).
 - Files: `.github/workflows/java-maven-render.yml`, `.github/workflows/next-cloudflare.yml`, `.github/workflows/java-maven-release.yml` (check its `runs-on` and actions too).
 - Both throwaway callers must re-run green; `v1` must move to the new `v1.x` (TASK-037 tags first).
 
@@ -89,15 +68,42 @@ This agent builds the library. Read the VovoSpaces sources and copy what they do
 
 ---
 
-## IN_PROGRESS
-
-_None._
-
 ## BLOCKED
 
 _None._
 
 ## COMPLETED
+
+### TASK-037: Tag platform `v1` on the public GitHub repo
+**Status:** COMPLETED  
+**Priority:** Normal  
+**Duration:** 0.5 hour  
+**Category:** Pipeline  
+**Depends On:** TASK-034  
+**Source:** TASK-034  
+**Actor:** `human` — create the public repo if needed, push `main`, create and push the tags  
+**Environments:** none  
+**Applied:** no  
+**Questions:** none  
+**Review:** human observation  
+**Completed:** 2026-10-05  
+
+**Description:** Proof that only a human can make: the moving `v1` pin exists on the public repo. Copied from TASK-034.
+
+**Acceptance Criteria:**
+- [x] `v1` exists, with a changelog entry.
+
+**Actor steps:**
+1. The public repo exists (TASK-035) and `CHANGELOG.md` is already on `origin/main`. Commit and push any pending doc changes first, so the tag sits on the latest `main`.
+2. Confirm `git status` is clean and `main` matches `origin/main`.
+3. Run the User-run tag commands from `STACK.md`: `git tag -a v1.0.0 -m "v1.0.0"` then `git tag -f v1 v1.0.0` then `git push origin v1.0.0 v1`.
+4. Paste the tag URLs on this card.
+
+**Tags:** https://github.com/theagester12345/agada-tech-platform/releases/tag/v1.0.0 and https://github.com/theagester12345/agada-tech-platform/tree/v1 — both on `b3f11cf`, checked with `git ls-remote`.
+
+**References:** `CHANGELOG.md`; `STACK.md` → User-run; TASK-034.
+
+---
 
 ### TASK-036: Verify next-cloudflare on GitHub (lint/test/build, deploy skipped)
 **Status:** COMPLETED  
@@ -183,7 +189,7 @@ _None._
 - The guide lists every secret and variable a caller sets, by name only, and the order to set them.
 
 **Acceptance Criteria:**
-- [ ] `v1` exists, with a changelog entry. — proof on TASK-037 (needs a public GitHub remote). Changelog entry is in `CHANGELOG.md`.
+- [x] `v1` exists, with a changelog entry. — proof on TASK-037 (`v1` and `v1.0.0` on `b3f11cf`). Changelog entry is in `CHANGELOG.md`.
 - [x] The onboarding guide exists and names every input, secret and variable.
 
 **References:** TASK-030, TASK-031, TASK-032; TASK-037.
