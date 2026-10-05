@@ -29,6 +29,11 @@ Append entries chronologically before the `_Last Updated:_` line and bump that d
 **Reasoning:** A `workflow_call` boolean is a real boolean, so `== 'true'` is always false and Render would never update. `github.repository` and `github.workflow_ref` are the caller; a same-repo throwaway caller hides both. GitHub’s own example for “files beside the recipe” is the `job.workflow_*` pair.
 **Trigger criterion:** gotcha
 
+## [2026-10-05] - path-filtered test callers need a manual dispatch to verify
+**Decision / Lesson:** To verify a test caller on GitHub, start it with **Run workflow** (`workflow_dispatch`). Do not plan on "push `main`".
+**Reasoning:** The callers' `push` trigger is limited to recipe and fixture paths. A push that only changes docs starts nothing, and that looks like a broken pipeline. TASK-036's original steps assumed a push would run it.
+**Trigger criterion:** gotcha
+
 ---
 
-_Last Updated: 2026-10-03_
+_Last Updated: 2026-10-05_

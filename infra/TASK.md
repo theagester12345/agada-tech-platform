@@ -36,36 +36,8 @@ Single source of truth for this side's task state. Ships because this side **par
 
 This agent builds the library. Read the VovoSpaces sources and copy what they do. Do not invent a new pipeline. Sources: `~/workspace/vovo-spaces/.github/workflows/ci.yml`, `~/workspace/vovo-spaces/infra/terraform/`, `~/workspace/vovo-spaces/infra/INFRA.md`, `~/workspace/vovo-spaces/infra/DEPLOYMENT_PLAN.md`. One test server, built and deployed from `main`. No second server and no promotion input. No secrets, account ids, or service ids in this repo. Switching VovoSpaces over to call these files is that repo's TASK-035, not a card here.
 
-### TASK-036: Verify next-cloudflare on GitHub (lint/test/build, deploy skipped)
-**Status:** IN_PROGRESS  
-**Priority:** Normal  
-**Duration:** 0.5 hour  
-**Category:** Pipeline  
-**Depends On:** TASK-031  
-**Source:** TASK-031  
-**Actor:** `human` — start the run from the Actions tab, read it, paste the URL  
-**Environments:** none  
-**Applied:** no  
-
-**Description:** Proof that only a human can make: the throwaway frontend caller actually runs on GitHub. Copied from TASK-031.
-
-**Acceptance Criteria:**
-- [ ] A test caller lints, tests and builds; with the switch off, deploys nothing.
-
-**Actor steps:**
-1. The public repo exists (TASK-035) and `main` is pushed at `31f5012`.
-2. Open https://github.com/theagester12345/agada-tech-platform/actions/workflows/test-next-cloudflare.yml → **Run workflow** → branch `main` → **Run workflow**.
-3. In that run: `frontend` is green (lint, test, build). `frontend-deploy` is skipped.
-4. Paste the run URL on this card.
-
-**Spec correction (2026-10-05):** the original steps said "push `main`". That does not start this caller: its `push` trigger is path-filtered to the recipe and fixture, and no push since the repo went public touched them (the public API listed zero runs). `workflow_dispatch` is the trigger that works without a code change.
-
-**References:** `.github/workflows/test-next-cloudflare.yml`; TASK-031.
-
----
-
 ### TASK-037: Tag platform `v1` on the public GitHub repo
-**Status:** TODO  
+**Status:** IN_PROGRESS  
 **Priority:** Normal  
 **Duration:** 0.5 hour  
 **Category:** Pipeline  
@@ -81,12 +53,39 @@ This agent builds the library. Read the VovoSpaces sources and copy what they do
 - [ ] `v1` exists, with a changelog entry.
 
 **Actor steps:**
-1. Create the public GitHub repository if it does not exist (`STACK.md` → User-run), or reuse it after TASK-035.
-2. Commit and push `main` so `CHANGELOG.md` is on the remote.
+1. The public repo exists (TASK-035) and `CHANGELOG.md` is already on `origin/main`. Commit and push any pending doc changes first, so the tag sits on the latest `main`.
+2. Confirm `git status` is clean and `main` matches `origin/main`.
 3. Run the User-run tag commands from `STACK.md`: `git tag -a v1.0.0 -m "v1.0.0"` then `git tag -f v1 v1.0.0` then `git push origin v1.0.0 v1`.
 4. Paste the tag URLs on this card.
 
 **References:** `CHANGELOG.md`; `STACK.md` → User-run; TASK-034.
+
+---
+
+### TASK-038: Recipes: move off Node 20 actions and pin the runner image
+**Status:** TODO  
+**Priority:** High  
+**Duration:** 2 hours  
+**Category:** Pipeline  
+**Depends On:** None  
+**Source:** TASK-036  
+**Environments:** none in this repo; every caller pinned to `@v1`  
+**Applied:** no  
+
+**Description:** The TASK-036 run (https://github.com/theagester12345/agada-tech-platform/actions/runs/37312430650) raised two annotations against the recipes. (1) Warning: `actions/cache@v4`, `actions/checkout@v4`, `actions/setup-node@v4` (and likely `actions/setup-java@v4`) target Node 20 and are being forced onto Node 24. (2) Notice: `ubuntu-latest` migrates to Ubuntu 26 from **2026-10-19**. Every caller on `@v1` inherits both, so this is a `v1.x` fix, not a caller change.
+
+**Technical Constraints:**
+- Bump only to action majors whose release notes declare Node 24; keep inputs unchanged so it stays a `v1.x` fix.
+- Runner: decide between pinning `ubuntu-24.04` (stable now, needs a later bump) and staying on `ubuntu-latest` after proving the recipes on Ubuntu 26. Record the choice in `infra/SESSION_LOG.md` with the rejected option.
+- Files: `.github/workflows/java-maven-render.yml`, `.github/workflows/next-cloudflare.yml`, `.github/workflows/java-maven-release.yml` (check its `runs-on` and actions too).
+- Both throwaway callers must re-run green; `v1` must move to the new `v1.x` (TASK-037 tags first).
+
+**Acceptance Criteria:**
+- [ ] No Node 20 deprecation warning on either test caller run.
+- [ ] Runner choice made, written in `INFRA.md` → CI/CD, and both test callers green on it.
+- [ ] `CHANGELOG.md` has a `v1.x` entry.
+
+**References:** TASK-036 run annotations; https://github.com/actions/runner-images/issues/14748.
 
 ---
 
@@ -99,6 +98,39 @@ _None._
 _None._
 
 ## COMPLETED
+
+### TASK-036: Verify next-cloudflare on GitHub (lint/test/build, deploy skipped)
+**Status:** COMPLETED  
+**Priority:** Normal  
+**Duration:** 0.5 hour  
+**Category:** Pipeline  
+**Depends On:** TASK-031  
+**Source:** TASK-031  
+**Actor:** `human` — start the run from the Actions tab, read it, paste the URL  
+**Environments:** none  
+**Applied:** no  
+**Questions:** none  
+**Review:** human observation  
+**Completed:** 2026-10-05  
+
+**Description:** Proof that only a human can make: the throwaway frontend caller actually runs on GitHub. Copied from TASK-031.
+
+**Acceptance Criteria:**
+- [x] A test caller lints, tests and builds; with the switch off, deploys nothing.
+
+**Actor steps:**
+1. The public repo exists (TASK-035) and `main` is pushed.
+2. Open https://github.com/theagester12345/agada-tech-platform/actions/workflows/test-next-cloudflare.yml → **Run workflow** → branch `main` → **Run workflow**.
+3. In that run: `frontend` is green (lint, test, build). `frontend-deploy` is skipped.
+4. Paste the run URL on this card.
+
+**Run:** https://github.com/theagester12345/agada-tech-platform/actions/runs/37312430650 (dispatch on `c35fb8f`). `frontend — lint + build` green, `frontend-deploy` skipped. Annotations (Node 20 deprecation, `ubuntu-latest` → Ubuntu 26) filed as TASK-038.
+
+**Spec correction (2026-10-05):** the original steps said "push `main`". That does not start this caller: its `push` trigger is path-filtered to the recipe and fixture, and no push since the repo went public touched them (the public API listed zero runs). `workflow_dispatch` is the trigger that works without a code change.
+
+**References:** `.github/workflows/test-next-cloudflare.yml`; TASK-031.
+
+---
 
 ### TASK-035: Verify java-maven-render on GitHub (image push, deploy skipped)
 **Status:** COMPLETED  
@@ -206,7 +238,7 @@ _None._
 
 **Acceptance Criteria:**
 - [x] The workflow is in this repo.
-- [ ] A test caller lints, tests and builds; with the switch off, deploys nothing. — proof on TASK-036 (needs a public GitHub remote). Fixture scripts passed locally.
+- [x] A test caller lints, tests and builds; with the switch off, deploys nothing. — proof on TASK-036: https://github.com/theagester12345/agada-tech-platform/actions/runs/37312430650
 - [x] Inputs documented in the platform README.
 
 **References:** `~/workspace/vovo-spaces/.github/workflows/ci.yml` (`frontend`, `frontend-deploy`); TASK-036.
