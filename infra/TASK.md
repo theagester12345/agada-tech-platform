@@ -38,8 +38,16 @@ This agent builds the library. Read the VovoSpaces sources and copy what they do
 
 ## IN_PROGRESS
 
+_None._
+
+## BLOCKED
+
+_None._
+
+## COMPLETED
+
 ### TASK-038: Recipes: move off Node 20 actions and pin the runner image
-**Status:** IN_PROGRESS  
+**Status:** COMPLETED  
 **Priority:** High  
 **Duration:** 2 hours  
 **Category:** Pipeline  
@@ -49,6 +57,7 @@ This agent builds the library. Read the VovoSpaces sources and copy what they do
 **Applied:** no  
 **Questions:** none  
 **Review:** self-review (medium) — 2 card-format findings, fixed; no code findings  
+**Completed:** 2026-10-05  
 
 **Description:** The TASK-036 run (https://github.com/theagester12345/agada-tech-platform/actions/runs/37312430650) raised two annotations against the recipes. (1) Warning: `actions/cache@v4`, `actions/checkout@v4`, `actions/setup-node@v4` target Node 20 (as do `actions/setup-java@v4` and the Docker v3/v6 actions) and are being forced onto Node 24. (2) Notice: `ubuntu-latest` migrates to Ubuntu 26 from **2026-10-19**. Every caller on `@v1` inherits both, so this is a `v1.x` fix, not a caller change.
 
@@ -60,19 +69,15 @@ This agent builds the library. Read the VovoSpaces sources and copy what they do
 - Both throwaway callers must re-run green; `v1` must move to the new `v1.x` (TASK-037 tags first).
 
 **Acceptance Criteria:**
-- [ ] No Node 20 deprecation warning on either test caller run.
-- [ ] Runner choice made, written in `INFRA.md` → CI/CD, and both test callers green on it.
-- [ ] `CHANGELOG.md` has a `v1.x` entry.
+- [x] No Node 20 deprecation warning on either test caller run.
+- [x] Runner choice made, written in `INFRA.md` → CI/CD, and both test callers green on it.
+- [x] `CHANGELOG.md` has a `v1.x` entry.
+
+**Runs (push `2ae6b9c`, all jobs on `ubuntu-26.04`, zero annotations):** https://github.com/theagester12345/agada-tech-platform/actions/runs/37317746443 (backend: verify green, image pushed, deploy skipped) and https://github.com/theagester12345/agada-tech-platform/actions/runs/37317746521 (frontend: lint + build green, deploy skipped). Released as `v1.0.1`; `v1` moved to it. Not proven here: the v7 `digest` output reaching Render, since no test caller deploys.
 
 **References:** TASK-036 run annotations; https://github.com/actions/runner-images/issues/14748.
 
 ---
-
-## BLOCKED
-
-_None._
-
-## COMPLETED
 
 ### TASK-037: Tag platform `v1` on the public GitHub repo
 **Status:** COMPLETED  

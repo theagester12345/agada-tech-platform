@@ -9,7 +9,7 @@ This is the **platform** version — the pin callers use (`@v1`, `?ref=v1`). It 
 - `v1` is a moving tag. It always points at the latest `v1.x`.
 - A caller that must not move pins the exact tag (`@v1.0.0`, `?ref=v1.0.0`).
 
-## v1.0.1 — unreleased
+## v1.0.1 — 2026-10-05
 
 Fix. No input, output, secret or module variable changed.
 
