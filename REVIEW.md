@@ -17,7 +17,7 @@ So: every lane below runs in **fresh context**, and the agent that wrote the cod
 
 | Lane | Looks for |
 |---|---|
-| **Conventions** | Violations of this project's `CLAUDE.md` / `WORKFLOW.md` rules |
+| **Conventions** | Violations of this project's `CLAUDE.md` / `WORKFLOW.md` rules — including a changed comment a developer new to the file would need explained |
 | **Shallow bug scan** | Defects in the **changed lines only** — null/undefined, error paths, off-by-one, unhandled cases |
 | **History** | What revision history and blame say about this code's past |
 | **Prior decisions** | Earlier changes and recorded decisions touching these files — is a fix being silently reverted, a decision contradicted? |

@@ -1,0 +1,342 @@
+#!/usr/bin/env bash
+# wf-git — the only supported way to use a client-repo mode review repo.
+#
+# In a repo that must not carry the workflow (client or company work), the workflow docs are
+# excluded from it via .git/info/exclude, so the editor's source-control view cannot show an
+# agent's edits to them. This review repo exists so the user SEES those edits as a diff before
+# accepting them. HEAD is always the last state the user approved: agents edit, list the changed
+# files at the review stop, open diffs only when asked, and `commit` only on the user's go-ahead.
+# Its work tree is the whole client checkout, so a raw `git --git-dir=…` could stage or overwrite
+# client source. This wrapper exists to make that impossible:
+#   - only init/diff/commit/status/ls/log exist; anything else (clean, checkout, reset, push, …) is refused;
+#   - every command except init and log needs an explicit pathspec, validated before anything runs;
+#   - only files matching the "AI dev workflow" block of the client repo's .git/info/exclude are ever
+#     staged, listed or diffed — the same single list that keeps them out of the client repo;
+#   - nothing touches a shared index or writes into the work tree.
+# No remote, ever: workflow improvements travel to the master as WFC- entries, the rest is project-local.
+#
+# Configuration (never derived from where this script sits — one shared copy serves every project):
+#   --project <dir>      or $WF_PROJECT       the client checkout (default: the git top level of $PWD)
+#   --history-dir <dir>  or $WF_HISTORY_DIR   where the review repo lives, OUTSIDE the project
+#                                            (default: ~/.ai-dev-workflow/history/<project dir name>)
+# Ported from vovo-spaces' wf-git (WFC-20261006-01 / -08); see README.md.
+set -euo pipefail
+
+PROJECT="${WF_PROJECT:-}"
+HISTORY_DIR="${WF_HISTORY_DIR:-}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project)     [[ $# -ge 2 ]] || { echo "wf-git: --project needs a directory" >&2; exit 2; }; PROJECT="$2"; shift 2 ;;
+    --history-dir) [[ $# -ge 2 ]] || { echo "wf-git: --history-dir needs a directory" >&2; exit 2; }; HISTORY_DIR="$2"; shift 2 ;;
+    *) break ;;
+  esac
+done
+
+die() { echo "wf-git: $*" >&2; exit 2; }
+
+if [[ -z "$PROJECT" ]]; then
+  PROJECT="$(git rev-parse --show-toplevel 2>/dev/null)" \
+    || die "not inside a git checkout — pass --project <dir> or set WF_PROJECT"
+fi
+WORK_TREE="$(cd "$PROJECT" 2>/dev/null && pwd -P)" || die "project not found: $PROJECT"
+git -C "$WORK_TREE" rev-parse --git-dir >/dev/null 2>&1 || die "$WORK_TREE is not a git checkout"
+[[ -n "$HISTORY_DIR" ]] || HISTORY_DIR="$HOME/.ai-dev-workflow/history/$(basename "$WORK_TREE")"
+SHADOW_GIT_DIR="$HISTORY_DIR/repo.git"
+case "$SHADOW_GIT_DIR/" in "$WORK_TREE"/*) die "the history must live OUTSIDE the project: $HISTORY_DIR" ;; esac
+EXCLUDE_FILE="$(git -C "$WORK_TREE" rev-parse --absolute-git-dir)/info/exclude"
+# The block must be delimited explicitly: without an end marker, anything later appended to the
+# exclude file (a .env or build-output section) would silently become committable here.
+BLOCK_START="# ── AI dev workflow"
+BLOCK_END="# ── end AI dev workflow"
+
+# Paths are data, never globs or ':(magic)' — a file literally named `*` must not widen a match.
+export GIT_LITERAL_PATHSPECS=1
+
+# One scratch dir, created and registered in the main shell: temp files made inside `$(...)` would
+# register in a subshell and never be cleaned (they hold private doc names and index copies).
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/wf-git.XXXXXX")"
+TMP_DIRS=("$WORK")
+cleanup() { local d; for d in "${TMP_DIRS[@]}"; do rm -rf "$d"; done; }
+trap cleanup EXIT
+
+usage() {
+  cat <<'EOF'
+usage: wf-git [--project <dir>] [--history-dir <dir>] <command> [args]
+       (paths are relative to the project root)
+
+  init                         create the review repo for this project (once; idempotent)
+  diff [--base <rev>] [--print | --open] <path>...
+                               list the files changed since the last approved commit (or <rev>).
+                               --print: a unified diff in the terminal. --open: the project's
+                               diff opener (adapters/diff-open; difftool or a VS Code-family
+                               editor) — ONLY when the user asks; never at the review stop on your own
+  commit <label> <path>...     record the reviewed edits as approved — run ONLY after the user has
+                               seen the diff and given the go-ahead; prints the hash (no-op if unchanged)
+  status <path>...             files changed since the last approved commit
+  ls <path>...                 files approved so far under <path>
+  log [<path>...]              approval history
+
+Each side passes only its own doc home plus the root shared files (WORKFLOW.md scope wall).
+EOF
+}
+
+# Nothing here should run code from config (hooks, fsmonitor, pager, global attributes);
+# quotePath=false keeps non-ASCII names raw so they can be used as paths.
+SAFE_CFG=(-c core.hooksPath=/dev/null -c core.fsmonitor=false -c core.pager=cat
+          -c core.attributesFile=/dev/null -c core.quotePath=false)
+# Review repo.
+sg() { git "${SAFE_CFG[@]}" -C "$WORK_TREE" --git-dir="$SHADOW_GIT_DIR" --work-tree="$WORK_TREE" "$@"; }
+# Client repo — read-only queries only.
+cg() { git "${SAFE_CFG[@]}" -C "$WORK_TREE" "$@"; }
+
+# Validated in the main shell on purpose: a `die` inside `< <(...)` only exits a subshell, which once
+# let a rejected path fall through to an empty pathspec — i.e. the whole checkout.
+PATHS=()
+parse_paths() {
+  PATHS=()
+  local p orig
+  for orig in "$@"; do
+    [[ -n "$orig" ]] || die "blank path"
+    p="$orig"
+    if [[ "$p" == /* ]]; then
+      [[ "$p" == "$WORK_TREE" || "$p" == "$WORK_TREE/"* ]] || die "path outside the project checkout: $orig"
+      p="${p#"$WORK_TREE"}"; p="${p#/}"
+    fi
+    case "/$p/" in */../*|*/./*) die "'.' and '..' path segments are not allowed: $orig" ;; esac
+    [[ -n "$p" ]] || die "refusing the whole checkout — pass your own doc home and the root shared files"
+    PATHS+=("$p")
+  done
+  [[ ${#PATHS[@]} -gt 0 ]] || die "a pathspec is required (refusing to act on the whole checkout)"
+}
+
+# The allowlist: patterns between BLOCK_START and BLOCK_END. Only anchored, literal patterns are
+# accepted — an unanchored `TASK.md` or a glob would quietly pull client source into scope.
+PATTERNS_FILE=""
+load_patterns() {
+  [[ -f "$EXCLUDE_FILE" ]] || die "missing $EXCLUDE_FILE"
+  PATTERNS_FILE="$WORK/patterns"
+  local rc=0
+  awk -v s="$BLOCK_START" -v e="$BLOCK_END" '
+    { sub(/\r$/, ""); sub(/[ \t]+$/, "") }
+    index($0, e) == 1 { if (inb) { found = 1; exit } }
+    index($0, s) == 1 { if (seen++) { dup = 1; exit } inb = 1; next }
+    inb && NF && !/^#/ { print }
+    END { if (dup) exit 4; if (!found) exit 3 }
+  ' "$EXCLUDE_FILE" > "$PATTERNS_FILE" || rc=$?
+  case "$rc" in
+    0) ;;
+    4) die "the '$BLOCK_START' header appears twice in $EXCLUDE_FILE" ;;
+    *) die "$EXCLUDE_FILE needs a block that starts with '$BLOCK_START' and ends with a line starting '$BLOCK_END'" ;;
+  esac
+  [[ -s "$PATTERNS_FILE" ]] || die "the AI dev workflow block in $EXCLUDE_FILE is empty"
+  local bad
+  bad="$(grep -nvE '^/[^][*?!\\]+$' "$PATTERNS_FILE" || true)"
+  [[ -z "$bad" ]] || die "only anchored, literal patterns are allowed in the AI dev workflow block; offending: $bad"
+}
+
+# The history repo records which project it belongs to. The default history directory is named
+# after the project's directory, so two client checkouts with the same name would otherwise share
+# one history — and a commit would record one client's private docs in another's.
+require_repo() {
+  [[ -d "$SHADOW_GIT_DIR" ]] || die "no review repo at $SHADOW_GIT_DIR — run: wf-git init"
+  local owner
+  owner="$(git --git-dir="$SHADOW_GIT_DIR" config --get wf.project 2>/dev/null || true)"
+  [[ "$owner" == "$WORK_TREE" ]] \
+    || die "the review repo at $SHADOW_GIT_DIR belongs to '${owner:-an unknown project}', not $WORK_TREE — pass --history-dir"
+}
+
+has_head() { sg rev-parse --verify --quiet HEAD >/dev/null; }
+
+# A private, throwaway index seeded from <tree-ish>. Every command uses its own, so leftovers from a
+# failed run or a parallel session can never ride along into a commit.
+IDX=""
+seed_index() {
+  IDX="$WORK/index"; rm -f "$IDX"
+  if [[ -n "${1:-}" ]]; then GIT_INDEX_FILE="$IDX" sg read-tree "$1"
+  else GIT_INDEX_FILE="$IDX" sg read-tree --empty; fi
+}
+
+# Reject names that could escape a directory when used to build a temp path (a crafted tree entry
+# like `backend/../../x` would otherwise let `diff` truncate a file outside its temp dir).
+assert_safe_name() {
+  [[ -n "$1" && "$1" != /* ]] || die "unsafe path in the review repo, refusing: $1"
+  case "/$1/" in */../*|*/./*|*//*) die "unsafe path in the review repo, refusing: $1" ;; esac
+}
+
+# Workflow files under PATHS: untracked or still-committed in the client repo, plus anything the
+# review repo holds in IDX (so deletions are seen) — all filtered through the block. Files the work
+# tree's .gitignore matches (a .env inside a workflow folder) are never versioned here.
+CANDIDATES=()
+collect_candidates() {
+  local raw="$WORK/raw" sorted="$WORK/sorted" ign="$WORK/ignored" held="$WORK/held"
+  : > "$raw"
+  cg ls-files -z --others --ignored --exclude-from="$PATTERNS_FILE" -- "${PATHS[@]}" >> "$raw"
+  cg ls-files -z --cached --ignored --exclude-from="$PATTERNS_FILE" -- "${PATHS[@]}" >> "$raw"
+  GIT_INDEX_FILE="$IDX" sg ls-files -z --cached --ignored --exclude-from="$PATTERNS_FILE" -- "${PATHS[@]}" >> "$raw"
+  sort -zu "$raw" > "$sorted"
+  CANDIDATES=()
+  [[ -s "$sorted" ]] || return 0
+  local rc=0
+  # check-ignore rejects literal-pathspec mode; safe to drop here — its input is names git itself listed.
+  # Only the work tree's .gitignore files count — not the review repo's own or the global excludes.
+  GIT_LITERAL_PATHSPECS=0 sg -c core.excludesFile=/dev/null check-ignore --no-index -z --stdin \
+    < "$sorted" > "$ign" || rc=$?
+  [[ $rc -le 1 ]] || die "check-ignore failed (exit $rc)"
+  GIT_INDEX_FILE="$IDX" sg ls-files -z > "$held"
+  local -A skip=() inidx=()
+  local f
+  while IFS= read -r -d '' f; do inidx["$f"]=1; done < "$held"
+  while IFS= read -r -d '' f; do
+    # Skipping an already-approved file would freeze it at its old version without saying so.
+    [[ -z "${inidx[$f]:-}" ]] || die "$f is approved here but now matches a .gitignore rule — resolve that first"
+    skip["$f"]=1
+    echo "wf-git: skipped (matches .gitignore, never versioned here): $f" >&2
+  done < "$ign"
+  while IFS= read -r -d '' f; do
+    assert_safe_name "$f"
+    [[ -z "${skip[$f]:-}" ]] || continue
+    # Listed by the client index but gone from disk and never approved: nothing to record.
+    [[ -e "$WORK_TREE/$f" || -L "$WORK_TREE/$f" || -n "${inidx[$f]:-}" ]] || continue
+    CANDIDATES+=("$f")
+  done < "$sorted"
+}
+
+cmd_init() {
+  [[ $# -eq 0 ]] || die "usage: wf-git init"
+  if [[ -d "$SHADOW_GIT_DIR" ]]; then
+    require_repo
+    echo "already initialized: $SHADOW_GIT_DIR"; return 0
+  fi
+  mkdir -p "$HISTORY_DIR"
+  git init -q --bare "$SHADOW_GIT_DIR"
+  git --git-dir="$SHADOW_GIT_DIR" config wf.project "$WORK_TREE"
+  echo "initialized: $SHADOW_GIT_DIR  (work tree: $WORK_TREE; no remote)"
+}
+
+cmd_commit() {
+  [[ $# -ge 2 ]] || die "usage: wf-git commit <label> <path>...   (only after the user approved the diff)"
+  local label="$1"; shift
+  [[ -n "$label" ]] || die "blank label"
+  parse_paths "$@"; require_repo; load_patterns
+  local old=""
+  if has_head; then old="$(sg rev-parse HEAD)"; fi
+  seed_index "$old"
+  collect_candidates
+  [[ ${#CANDIDATES[@]} -gt 0 ]] || die "no workflow docs under: ${PATHS[*]}"
+  GIT_INDEX_FILE="$IDX" sg add -A -- "${CANDIDATES[@]}"
+  local tree new
+  tree="$(GIT_INDEX_FILE="$IDX" sg write-tree)"
+  if [[ -n "$old" && "$tree" == "$(sg rev-parse "HEAD^{tree}")" ]]; then
+    echo "unchanged: $(sg rev-parse --short HEAD)"; return 0
+  fi
+  if [[ -n "$old" ]]; then new="$(sg commit-tree "$tree" -p "$old" -m "approved: $label")"
+  else new="$(sg commit-tree "$tree" -m "approved: $label")"; fi
+  # Compare-and-swap: if another session committed since we read HEAD, fail instead of silently
+  # reverting its approved changes with our older tree.
+  sg update-ref -m "wf-git commit: $label" HEAD "$new" "$old" \
+    || die "HEAD moved while committing (another session approved something) — re-run the commit"
+  sg rev-parse --short HEAD
+}
+
+cmd_diff() {
+  # Listing is the default because diff tabs opening unasked at the review stop was the one
+  # behaviour the originating user rejected (WFC-20261007-08); opening needs --open, a deliberate request.
+  local base="HEAD" print=0 open=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --base)  [[ $# -ge 2 ]] || die "--base needs a revision"; base="$2"; shift 2 ;;
+      --print) print=1; shift ;;
+      --open)  open=1; shift ;;
+      *) break ;;
+    esac
+  done
+  parse_paths "$@"; require_repo; load_patterns
+  local rev
+  if [[ "$base" == "HEAD" ]] && ! has_head; then
+    rev="$(sg hash-object -t tree /dev/null)"     # nothing approved yet: everything is new
+  else
+    rev="$(sg rev-parse --verify --quiet "$base^{commit}")" || die "unknown revision: $base"
+  fi
+  seed_index "$rev"
+  collect_candidates
+
+  local tmp f old new changed=0 opener=""
+  local -a to_open=()
+  [[ $print -eq 1 && $open -eq 1 ]] && die "--print and --open are exclusive"
+  if [[ $open -eq 1 ]]; then
+    # One opener for the review stop (TASK-089): the shared adapter, found through $WF_DIFF_OPEN or
+    # in the project's own adapters/ — from the project, never from where this script sits.
+    opener="${WF_DIFF_OPEN:-$WORK_TREE/adapters/diff-open/diff-open.sh}"
+    [[ -f "$opener" ]] || die "the diff-open adapter is not at $opener — copy adapters/diff-open/ or set WF_DIFF_OPEN"
+  fi
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/wf-git-diff.XXXXXX")"
+  if [[ $open -eq 0 ]]; then
+    TMP_DIRS+=("$tmp")
+  else
+    # Kept after exit on purpose: a configured difftool may return before it has read the files.
+    # Day-old ones (copies of private docs) are pruned instead.
+    find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'wf-git-diff.*' -type d -mmin +1440 -exec rm -rf {} + 2>/dev/null || true
+  fi
+  for f in "${CANDIDATES[@]}"; do
+    old="$tmp/before/$f"; new="$WORK_TREE/$f"
+    mkdir -p "$(dirname "$old")"
+    if sg cat-file -e "$rev:$f" 2>/dev/null; then sg show "$rev:$f" > "$old"; else : > "$old"; [[ $open -eq 1 ]] && rm -f "$old"; fi
+    if [[ ! -f "$new" ]]; then new="$tmp/deleted/$f"; mkdir -p "$(dirname "$new")"; : > "$new"; fi
+    if [[ -f "$old" ]]; then cmp -s "$old" "$new" && continue; else [[ -s "$new" ]] || continue; fi
+    changed=$((changed + 1))
+    if [[ $print -eq 1 ]]; then
+      diff -u --label "a/$f ($base)" --label "b/$f" "$old" "$new" || true
+    elif [[ $open -eq 1 ]]; then
+      to_open+=("$f")
+    else
+      echo "changed: $f"
+    fi
+  done
+  # The approved copies are the left side; the right side is the real working file, so a comment
+  # typed in the diff lands in the doc. The opener (difftool or a VS Code-family editor) comes
+  # from the project's DIFF_OPENER / DIFF_EDITOR_BIN — STACK.md → Commands → Diff opener.
+  if [[ $open -eq 1 && ${#to_open[@]} -gt 0 ]]; then
+    bash "$opener" --project "$WORK_TREE" --base-dir "$tmp/before" -- "${to_open[@]}"
+  fi
+  echo "$changed file(s) changed since $base"
+}
+
+cmd_status() {
+  parse_paths "$@"; require_repo; load_patterns
+  local rev
+  if has_head; then rev="$(sg rev-parse HEAD)"; else rev="$(sg hash-object -t tree /dev/null)"; fi
+  seed_index "$rev"
+  collect_candidates
+  [[ ${#CANDIDATES[@]} -gt 0 ]] || { echo "no workflow docs under: ${PATHS[*]}"; return 0; }
+  GIT_INDEX_FILE="$IDX" sg add -A -- "${CANDIDATES[@]}"
+  GIT_INDEX_FILE="$IDX" sg diff --cached --name-status "$rev" -- "${CANDIDATES[@]}"
+}
+
+cmd_ls() {
+  parse_paths "$@"; require_repo
+  has_head || return 0
+  sg ls-tree -r --name-only HEAD -- "${PATHS[@]}"
+}
+
+cmd_log() {
+  [[ $# -eq 0 ]] || parse_paths "$@"
+  require_repo
+  has_head || { echo "nothing approved yet"; return 0; }
+  if [[ $# -gt 0 ]]; then
+    sg log --date=short --format='%h %ad %s' -- "${PATHS[@]}"
+  else
+    sg log --date=short --format='%h %ad %s'
+  fi
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  init)     cmd_init "$@" ;;
+  commit)   cmd_commit "$@" ;;
+  diff)     cmd_diff "$@" ;;
+  status)   cmd_status "$@" ;;
+  ls)       cmd_ls "$@" ;;
+  log)      cmd_log "$@" ;;
+  ""|-h|--help|help) usage ;;
+  *) die "'$cmd' is not allowed — only init/diff/commit/status/ls/log exist (no clean, checkout, reset, restore, stash, push, remote)" ;;
+esac

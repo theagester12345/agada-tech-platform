@@ -11,16 +11,27 @@
 
 Same-altitude disagreement is **drift** — fix the source and re-emit. Do not rank `AGENTS.md` above or below `CLAUDE.md`.
 
-Workspace outputs add one generated **Start here** preamble before the copied
-`CLAUDE.md` body. It directs an automatically booted agent to read
-`ARCHITECT.md` and execute its required initialization. This is the missing
-bootstrap link between automatic discovery and the existing active-read ritual:
-`AGENTS.md` gets the agent through the door; `ARCHITECT.md` loads
-`WORKFLOW.md`, `CLAUDE.md`, task state, history, and peer context.
+**Start here** is authored in each side's `CLAUDE.md`, not added by the emit, so `CLAUDE.md` and `AGENTS.md` carry the same line. It sends an automatically loaded agent to `ARCHITECT.md` and its required initialization, which ends with the receipt ([`WORKFLOW.md` → Session start](../../WORKFLOW.md#session-start)).
+
+## Per-host setup — making the bare `spec` shortcut work
+
+The opener `ARCHITECT.md spec` works on every host with no setup, because the file is named in the message. A bare `spec` works only where the host loaded that side's Start here line at start-up. Where it did not, the receipt is missing, and that shows it. Set up once per machine or repo, as your host needs. **None of this ships as a config file:** a host's config in the payload would privilege that host in the base.
+
+| Host | What it reads at start (verified 2026-10-19, from each host's docs) | Setup for bare `spec` |
+|---|---|---|
+| Claude Code | `CLAUDE.md` in the start folder and every folder above; `AGENTS.md` only where no `CLAUDE.md` exists | None: each side's `CLAUDE.md` carries Start here |
+| Codex | `AGENTS.md` from the git root down to the start folder, **until 32 KiB in total** (`project_doc_max_bytes`) | The root `AGENTS.md` (the spine) is larger than that, so the side's file is never reached. Raise the budget in `~/.codex/config.toml`: `project_doc_max_bytes = 131072` |
+| Gemini CLI | `GEMINI.md` by default; other names only through `context.fileName` | `.gemini/settings.json`: `{"context": {"fileName": ["AGENTS.md", "GEMINI.md"]}}` |
+| GitHub Copilot | `AGENTS.md` at the repo root and in the working folder | None reported |
+| Cursor | Nested `AGENTS.md`, scoped to its folder (community-reported) | None reported |
+
+Sources: Claude Code memory docs; Codex `AGENTS.md` docs; Gemini CLI `GEMINI.md` docs; GitHub's Copilot `AGENTS.md` changelog; Cursor forum. Hosts change; the receipt is what tells you whether a setup worked.
 
 `scaffold.sh` runs the emit after it copies and processes sources.
 
-**Keeping Bindings fresh (automatic):** `.githooks/pre-commit` re-runs emit with `--force` and stages the result whenever `WORKFLOW.md`, any `CLAUDE.md`, or any `AGENTS.md` is staged for commit. Humans and agents do not need to remember the script for the common case. Mid-session (before commit) you can still run:
+**An emitted file is recognised by its marker, never by its name.** Every Binding opens with the `⚙️ **EMITTED Binding**` line. An `AGENTS.md` without it is the project's own (Lovable, Codex and Copilot users write one): the emit refuses to overwrite it, `--force` included, and the hook never stages it. `--list` prints the Bindings the emit owns, one path per line, and is how the hook and the master's tooling know which those are. **Where the project owns the root `AGENTS.md`, no root Binding is emitted**, so a host that reads only `AGENTS.md` (Codex, Copilot) does not reach the workflow from it; the scaffold's workorder says so. The marker is the whole test, so a Binding whose first line was hand-edited counts as the project's own from then on, and `--force` no longer repairs it. Not done instead: appending a fenced block to the project's file (in client-repo mode it would commit the workflow into the client's repo), or a second filename such as `AGENTS.workflow.md` (no host reads it).
+
+**Keeping Bindings fresh (automatic):** `.githooks/pre-commit` re-runs emit with `--force` and stages the Bindings it wrote whenever `WORKFLOW.md`, any `CLAUDE.md`, or any `AGENTS.md` is staged for commit. Humans and agents do not need to remember the script for the common case. Mid-session (before commit) you can still run:
 
 ```bash
 # from a scaffolded project (script ships in adapters/):

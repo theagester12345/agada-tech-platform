@@ -1,24 +1,24 @@
 # CLAUDE.md — Agada Tech Platform Infrastructure
 
 
-## Initialization & persona
+## Start here
 
-Read [`ARCHITECT.md`](./ARCHITECT.md) and execute its Initialization section. It owns the persona, the mode, and the commands; this file owns the scope and the technical rules.
+**Before any work, read [`ARCHITECT.md`](./ARCHITECT.md) and run its _Initialization (Required)_, whatever the first message says.** It ends with the receipt ([`../WORKFLOW.md` → Session start](../WORKFLOW.md#session-start)); no receipt, no work. `ARCHITECT.md` owns the persona, the mode and the commands; this file owns the scope and the technical rules.
 
 ## Scope
 
 **Canonical:** [`../WORKFLOW.md` → the permission table](../WORKFLOW.md#the-permission-table--canonical-for-what). That table decides which paths this side may touch; the prose here explains *why* and *how* and never grants a path the table does not.
 
 - **Your doc home is `infra/`**, and your **code paths are declared in [`../STACK.md`](../STACK.md) → Code paths** — pipeline definitions, IaC, container and compose files, deploy scripts, environment templates. A workspace directory is a doc home, not a code root ([Workspace scope](../WORKFLOW.md#workspace-scope--doc-home-vs-code-root)): CI config in particular usually lives where the platform demands it, and that location is yours by declaration, not by where it sits.
-- **Engineering's code is `read`.** You need to know what a service listens on, what it builds to, and what it expects in its environment. You never edit it — when a deployment decision forces a change on a side, that is a `REQUEST` in your own outbox.
-- **`product/` is `deny`.** Nothing about hosting is a product decision, and nothing in `product/` is yours to answer.
+- **Engineering's code is `read`**, where a project has an engineering side; this repo has none, and its callers' repos are read the same way. You need to know what a service listens on, what it builds to, and what it expects in its environment. You never edit it — when a deployment decision forces a change on a side, that is a `REQUEST` in your own outbox.
+- **`product/` is `read` — its docs, on demand**, where a project has one (this repo has none). Nothing about hosting is a product decision. Other sides' docs are readable the same way ([Reading another side's docs](../WORKFLOW.md#reading-another-sides-docs)); `legal/` is not.
 - **Secrets:** you wire them; you do not read them. The contract is `.env.example` (names only). Canonical: [`../WORKFLOW.md` → Secrets & environment](../WORKFLOW.md#secrets--environment). A secret that has to exist gets its **name** added to the example file and a note in `INFRA.md` → Secrets & config saying where the real value is kept — never the value.
 
 ## What lives here
 
 - [`INFRA.md`](./INFRA.md) — **the** deployment architecture: topology, hosting, environments, secrets wiring, CI/CD. The artifact this side maintains, and the one every other side reads to learn where things run.
 - [`TASK.md`](./TASK.md) — this side's board. `Category` = **Topology | Pipeline | Environment | Security**.
-- [`INTERFACE.md`](./INTERFACE.md) — your outbox on the cross-side channel, code `IN`.
+- [`INTERFACE.md`](./INTERFACE.md) — your outbox on the cross-side channel, code `IN`. This repo has no peer, so it stays empty: callers are separate repositories.
 - [`SESSION_LOG.md`](./SESSION_LOG.md) — decisions worth not re-deriving, with their rejected alternatives.
 
 <!-- INDEX:START -->
@@ -35,10 +35,20 @@ Read [`ARCHITECT.md`](./ARCHITECT.md) and execute its Initialization section. It
 
 1. **The running system is the source of truth for `INFRA.md`, not the reverse.** Read what is deployed before you describe it; where they disagree, the document is wrong. A topology diagram nobody trusts is worse than none.
 2. **Every environment is named and its differences are written down.** An environment that exists but is undocumented is the one that breaks at 2am, and the difference that bit you is always the one nobody recorded.
-3. **Applying to a live environment is user-gated** ([canonical](../WORKFLOW.md#operating-modes-spec--build)). Write the change, show the plan, stop. Naming a task authorizes the *work*, never the apply. The commands that make a change real are listed in [`../STACK.md`](../STACK.md) → Commands → **User-run**. Print them for the user; never run one.
+3. **Applying to a live environment is user-gated** ([canonical](../WORKFLOW.md#operating-modes-spec--build)). Write the change, show the plan, stop. Naming a task authorizes the *work*, never the apply. The commands that make a change real are listed in [`../STACK.md`](../STACK.md) → Commands → **User-run**. Print them for the user; never run one. **Reading** the running system — status, logs, the deployed version — is yours in any mode, through the **Read-only ops** row; anything not listed there as a read stays user-run.
 4. **Irreversible operations are named as such before they are proposed** — deleting a volume or database, releasing a DNS name, rotating a secret with no recorded copy, destroying state. Say what cannot be undone, then wait.
 5. **Prefer the change that is reversible in one step.** Where two designs are equally good and one is recoverable by re-running a command, that is the one — infra's cost is not writing it, it is the day it has to be unwound.
 6. **No secret ever lands in a tracked file**, including a pipeline definition, an example env file, or a task card. The pre-commit guard catches the obvious cases; it is not a substitute for not typing it.
+
+## Plane Task Sync
+
+**Canonical Principle:** [`../WORKFLOW.md` → Task Tracker Sync](../WORKFLOW.md#task-tracker-sync--the-mirror-principle). **Binding:** the shipped [`adapters/plane/`](../adapters/plane/README.md). **Not set up yet:** this repo needs its own key prefix first (`STACK.md` → Task tracker; not VovoSpaces' `IN-`). Once it has one, after every `TASK.md` edit run the sync, dry-run then live:
+
+```bash
+node ../adapters/plane/sync-plane.js --dry-run --env ../.env --prefix <PREFIX>- --side-label Infrastructure    # preview; writes nothing
+node ../adapters/plane/sync-plane.js --env ../.env --prefix <PREFIX>- --side-label Infrastructure              # push TASK.md → Plane
+```
+Config — the gitignored **repo-root** `.env` ([one tooling `.env`](../WORKFLOW.md#one-env-at-the-code-root)). Infra wires secrets by name and never reads a value; the sync reads these at runtime.
 
 ## SESSION_LOG Protocol
 

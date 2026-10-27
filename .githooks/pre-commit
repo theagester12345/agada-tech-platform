@@ -6,8 +6,10 @@
 # 1) Secret guard: block real .env files / high-signal secret patterns.
 # 2) AGENTS.md Binding sync: if WORKFLOW.md / CLAUDE.md / AGENTS.md is staged,
 #    re-emit AGENTS.md from sources and stage the result (principle 3 — no relying
-#    on humans remembering to run emit-agents.sh).
-# 3) Review-question guard: block committing an unanswered reviewer-question
+#    on humans remembering to run emit-agents.sh). A project's own AGENTS.md (no
+#    EMITTED Binding marker) is never rewritten or staged.
+# 3) skills sync: if skills/ is staged, re-emit .claude/skills/ and stage it.
+# 4) Review-question guard: block committing an unanswered reviewer-question
 #    marker. See WORKFLOW.md -> The reviewer-questions gate.
 #
 # Bypass (false positive): git commit --no-verify
@@ -62,17 +64,38 @@ if [ "$emit_needed" -eq 1 ]; then
     fi
 
     echo "▶ pre-commit: re-emitting AGENTS.md from authored sources…"
-    if ! bash "$emit_script" --force; then
+    if ! emitted=$(bash "$emit_script" --force --list); then
       echo "✖ emit-agents.sh failed — fix the emit error before committing."
       fail=1
     else
-      # Include regenerated Bindings in this commit (deterministic; never hand-edited)
-      if [ -f AGENTS.md ]; then git add -- AGENTS.md; fi
-      for agents in */AGENTS.md; do
-        [ -f "$agents" ] || continue
+      # Include regenerated Bindings in this commit (deterministic; never hand-edited). Only the
+      # paths the emitter names: an AGENTS.md without its marker is the project's own, and staging
+      # it would commit edits its owner never staged (TASK-122).
+      # In client-repo mode a Binding is excluded from the client repo (wf-git versions it), so
+      # it is skipped, not added: `git add` of an ignored path fails and would abort the commit.
+      printf '%s\n' "$emitted" | while IFS= read -r agents; do
+        if [ -z "$agents" ] || git check-ignore -q -- "$agents"; then continue; fi
         git add -- "$agents"
       done
     fi
+  fi
+fi
+
+# 3b) Keep .claude/skills/ in sync with skills/ (TASK-101), right after AGENTS, for the same
+#     reason: an emitted copy nobody regenerates drifts from the procedure it carries.
+#     Deletions count too — a removed source must take its generated copy with it.
+if git diff --cached --name-only | grep -Eq '^(skills|\.claude/skills)/'; then
+  if [ -f adapters/skills/emit-skills.sh ]; then
+    echo "▶ pre-commit: re-emitting .claude/skills/ from skills/…"
+    if bash adapters/skills/emit-skills.sh --force >/dev/null; then
+      git add -A -- .claude/skills 2>/dev/null || true
+    else
+      echo "✖ emit-skills.sh failed — fix the skill source before committing."
+      fail=1
+    fi
+  else
+    echo "✖ staged skills/ but adapters/skills/emit-skills.sh is missing — copy it from the workflow template."
+    fail=1
   fi
 fi
 

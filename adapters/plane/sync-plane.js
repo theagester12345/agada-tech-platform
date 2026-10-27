@@ -11,27 +11,32 @@
  * workspace**; that is what caused two hand-maintained copies to drift.
  *
  * Usage:
- *   node sync-plane.js [--dry-run] [--root DIR] [--tasks PATH] [--env PATH] [--prefix STR] [--adopt]
+ *   node sync-plane.js [--dry-run] [--root DIR] [--tasks PATH] [--env PATH] [--prefix STR] [--side-label STR] [--adopt]
  *
  *   --dry-run      print the planned diff WITHOUT writing
  *   --root DIR     base dir for relative paths     (default: cwd)
  *   --tasks PATH   the TASK.md to read             (default: $TASKS_FILE or <root>/TASK.md)
+ *   --archive PATH its archive, read as part of the source (default: TASK_ARCHIVE.md beside it)
  *   --env PATH     env file to load                (default: <root>/.env)
  *   --prefix STR   external_id prefix, e.g. "BE-"  (default: $PLANE_KEY_PREFIX or "")
+ *   --side-label STR  label every card with this side's label, e.g. "Backend",
+ *                  instead of the Category mapping (default: $PLANE_SIDE_LABEL or none)
  *   --adopt        allow UPDATE on an id newly introduced in TASK.md that already
  *                  exists on the board (hand-stamped card adoption). Default: refuse.
  *   -h, --help     show this help
  *
  * Correlation key: Plane's native `external_id` + `external_source` on the issue
  * (external_id = "<prefix>TASK-018", external_source = "tasks-md"). Card titles
- * display the source id (`TASK-XXX: …`) for human navigation. Plane's list
+ * display the short namespaced id (`BE-018: …`; `TASK-018: …` with no prefix) for
+ * human navigation. Plane's list
  * endpoint has no external_id filter, so we fetch all issues once and index by
  * external_id client-side. Writes are scoped strictly to issues carrying our
  * external_source. The prefix keeps sides distinct on a shared board.
  *
- * Safety (mirror Principle): duplicate TASK ids in the source file are a parse
- * error. Ids newly introduced vs git HEAD that already exist on the board are
- * refused unless `--adopt` (destructive-write refuse).
+ * Safety (mirror Principle): duplicate TASK ids in the source (TASK.md + its archive) are a parse
+ * error. An id neither this checkout's sync record nor the committed TASK.md
+ * vouches for, landing on a card already on the board, is refused unless
+ * `--adopt` (destructive-write refuse; see "The overwrite guard's baseline").
  *
  * Modes:
  *   (default)   create-or-update every TASK-XXX as an issue, idempotently.
@@ -87,21 +92,25 @@ const DEFAULT_LABEL_MAP = Object.freeze({
 const USAGE = `sync-plane.js — one-way sync: TASK.md → Plane
 
 Usage:
-  node sync-plane.js [--dry-run] [--root DIR] [--tasks PATH] [--env PATH] [--prefix STR] [--adopt]
+  node sync-plane.js [--dry-run] [--root DIR] [--tasks PATH] [--env PATH] [--prefix STR] [--side-label STR] [--adopt]
 
   --dry-run      print the planned diff WITHOUT writing
   --root DIR     base dir for relative paths     (default: cwd)
   --tasks PATH   the TASK.md to read             (default: $TASKS_FILE or <root>/TASK.md)
+  --archive PATH its archive, read as part of the source (default: TASK_ARCHIVE.md beside it)
   --env PATH     env file to load                (default: <root>/.env) — use code-root .env from a doc home
   --prefix STR   external_id prefix, e.g. "BE-"  (default: $PLANE_KEY_PREFIX or "")
+  --side-label STR  label every card with this side's label, e.g. "Backend"
+                 (default: $PLANE_SIDE_LABEL or the Category mapping)
   --adopt        allow UPDATE when a newly introduced TASK id already exists on the board
 
-Removal propagates: a task deleted from TASK.md is DELETED from the board on the
-next run (scoped to this source's cards). Dry-run lists every deletion first.
+Removal propagates: a task deleted from TASK.md and its archive is DELETED from the
+board on the next run (scoped to this source's cards). Moving a card into the archive
+deletes nothing. Dry-run lists every deletion first.
   -h, --help     show this help
 
 Required in .env: PLANE_URL, PLANE_WORKSPACE, PLANE_PROJECT_ID, PLANE_API_TOKEN
-Optional:         PLANE_KEY_PREFIX, PLANE_EXTERNAL_SOURCE, PLANE_LABEL_MAP, TASKS_FILE`;
+Optional:         PLANE_KEY_PREFIX, PLANE_SIDE_LABEL, PLANE_EXTERNAL_SOURCE, PLANE_LABEL_MAP, TASKS_FILE`;
 
 // ---------------------------------------------------------------------------
 // CLI + config (no __dirname — every path is configuration).
@@ -116,8 +125,10 @@ function parseArgs(argv) {
     else if (a === "-h" || a === "--help") out.help = true;
     else if (a === "--root") out.root = argv[++i];
     else if (a === "--tasks") out.tasks = argv[++i];
+    else if (a === "--archive") out.archive = argv[++i];
     else if (a === "--env") out.env = argv[++i];
     else if (a === "--prefix") out.prefix = argv[++i];
+    else if (a === "--side-label") out.sideLabel = argv[++i];
     else fail(`unknown argument: ${a}\n\n${USAGE}`);
   }
   return out;
@@ -189,7 +200,11 @@ function getConfig(args) {
     keyPrefix: args.prefix !== undefined ? args.prefix : env.PLANE_KEY_PREFIX || "",
     externalSource: env.PLANE_EXTERNAL_SOURCE || "tasks-md",
     labelMap: resolveLabelMap(env),
+    // On a shared board the side is what a reader needs from the label; a category label
+    // (Documentation → Infrastructure) made one side's card read as another side's.
+    sideLabel: args.sideLabel !== undefined ? args.sideLabel : env.PLANE_SIDE_LABEL || "",
     tasksFile,
+    archiveFile: args.archive ? path.resolve(root, args.archive) : archivePathFor(tasksFile),
   };
 }
 
@@ -244,21 +259,44 @@ function stripTitle(raw) {
 // fields. "Renumber", the old advice, answers neither: the id does not clash with
 // somebody else's card, it clashes with its own.
 //
-// The common case is not an error at all. Commits here are user-gated, so a
-// session routinely syncs a new card and commits `TASK.md` later; until it does,
-// the id is "new" relative to git HEAD while the board already carries it. Naming
-// that first matters because the alternative on offer is `--adopt`, and reaching
-// for an override to make a guard stop is precisely how guards stop working.
-function destructiveWriteRefusal(collisions) {
-  return (
+// Two different situations reach it, and the advice differs (TASK-087). With a sync
+// record, a collision is a card some OTHER checkout or session synced — pulling or
+// committing their TASK.md resolves it. With no record (first run here, or the record
+// was deleted), nothing attributes ANY card to this checkout, so the honest answer is
+// a one-time, checked --adopt. Either way --adopt comes last and is named as the
+// override it is: reaching for one to make a guard stop is how guards stop working.
+function destructiveWriteRefusal(collisions, ctx = {}) {
+  const hasRecord = ctx.hasRecord !== false;
+  const head =
     `Refusing destructive write — id(s) already on the board that this file has just introduced:\n` +
     `  - ${collisions.join("\n  - ")}\n` +
     `\n` +
     `These cards carry this sync's own external_source, so each is either one this\n` +
     `workflow already created, or one stamped by hand with our correlation fields.\n` +
+    `\n`;
+  if (!hasRecord) {
+    // First run in this checkout, or its record was deleted: the guard has nothing that
+    // says which cards are this checkout's own, so it refuses rather than guess.
+    return (
+      head +
+      `This checkout has no record of the ids it last synced${ctx.recordPath ? ` (${ctx.recordPath})` : ""},\n` +
+      `so it cannot tell its own cards from a collision — every card above is unattributed.\n` +
+      `\n` +
+      `  1. See what adopting would change: --dry-run --adopt (writes nothing). If every card\n` +
+      `     above is this TASK.md's own, run ONCE with --adopt; the record is written after that\n` +
+      `     run and this check then guards normally.\n` +
+      `  2. If an id genuinely belongs to a different task, renumber it in TASK.md.\n` +
+      `\n` +
+      `Do not adopt a card you have not checked; --adopt overwrites whatever is there.`
+    );
+  }
+  return (
+    head +
+    `This checkout's record of what it synced does not include them, and neither does the\n` +
+    `committed TASK.md — so another checkout or session synced them.\n` +
     `\n` +
-    `  1. Most likely: the card was synced and TASK.md is not committed yet.\n` +
-    `     Commit it — the id is then in git HEAD and this check stops firing.\n` +
+    `  1. Most likely: someone else's sync of this same TASK.md. Pull, or commit theirs —\n` +
+    `     an id in the committed file is accepted.\n` +
     `  2. If the id genuinely belongs to a different task, renumber it in TASK.md.\n` +
     `  3. Only for a card you created by hand and are deliberately adopting: --adopt.\n` +
     `\n` +
@@ -341,6 +379,46 @@ function parseTasks(tasksFile) {
   return tasks;
 }
 
+// ---------------------------------------------------------------------------
+// The archive is part of the source (TASK-097).
+//
+// Old COMPLETED cards move out of TASK.md into TASK_ARCHIVE.md beside it, so the board a
+// session reads at start-up holds open work, not history. The tracker must not notice:
+// removal propagates for an id absent from the source, so the two files are read as ONE
+// source. A card that only changed files is still declared, and mirrors unchanged.
+// ---------------------------------------------------------------------------
+
+/** The archive's path: TASK_ARCHIVE.md in the same directory as the board. Pure. */
+function archivePathFor(tasksFile) {
+  return path.join(path.dirname(path.resolve(tasksFile)), "TASK_ARCHIVE.md");
+}
+
+/**
+ * Every task the source declares: the board's cards, then the archive's. A missing archive
+ * is an empty one. An id in both files is refused before any write — it is two cards for
+ * one id, the same fault as a duplicate within one file.
+ */
+function sourceTasks(tasksFile, archiveFile = archivePathFor(tasksFile)) {
+  const live = parseTasks(tasksFile);
+  if (!fs.existsSync(archiveFile)) return live;
+  const archived = parseTasks(archiveFile);
+  const liveIds = new Set(live.map((t) => t.id));
+  const both = archived.map((t) => t.id).filter((id) => liveIds.has(id));
+  if (both.length) {
+    fail(
+      `TASK id(s) in both ${path.basename(tasksFile)} and ${path.basename(archiveFile)} ` +
+        `(refuse before any write — a card lives in one file):\n  - ${[...new Set(both)].join("\n  - ")}`
+    );
+  }
+  return [...live, ...archived];
+}
+
+/** Ids either file's committed version vouches for; null only when neither is tracked. Pure. */
+function unionIds(a, b) {
+  if (a === null && b === null) return null;
+  return [...new Set([...(a || []), ...(b || [])])];
+}
+
 /** Collect TASK-XXX ids from raw TASK.md text (headings only). */
 function taskIdsFromContent(text) {
   const ids = [];
@@ -351,25 +429,92 @@ function taskIdsFromContent(text) {
   return ids;
 }
 
+// ---------------------------------------------------------------------------
+// The overwrite guard's baseline (WFC-20261009-04, TASK-087).
+//
+// "An id this edit just introduced" needs an input the source file and the board alone do
+// not give (the mirror Principle names three). This adapter uses TWO, and needs at least one:
+//   - its own RECORD of the ids this checkout last synced to this board/source/prefix —
+//     written only by a live run, kept inside .git (never in the tracked tree, so nothing to
+//     gitignore and nothing a client repo can see); and
+//   - the source file's COMMITTED version, which vouches for ids a teammate synced and
+//     committed. It adds no safety the record lacks, but without it a fresh pull would
+//     refuse a colleague's cards.
+// With neither — client-repo mode's untracked TASK.md on its first run — EVERY id is new:
+// any card already on the board is refused. That used to be a printed note and an
+// unguarded run, in exactly the configuration with the most concurrent writers.
+// ---------------------------------------------------------------------------
+
+/** Ids not vouched for by the record or the committed file. Pure. */
+function idsToGuard(currentIds, recordIds, headIds) {
+  const known = new Set([...(recordIds || []), ...(headIds || [])]);
+  return currentIds.filter((id) => !known.has(id));
+}
+
+/** The ids that would UPDATE a card nobody attributes to this checkout. Pure. */
+function destructiveCollisions(currentIds, { recordIds, headIds }, onBoardIds) {
+  return idsToGuard(currentIds, recordIds, headIds).filter((id) => onBoardIds.has(id));
+}
+
 /**
- * Ids present in the working TASK.md but not in git HEAD of that file.
- * Returns null when git HEAD is unavailable (not a git checkout / file untracked).
+ * What the record holds after a live run. A complete run synced every source id. A run that
+ * died part-way keeps what it did sync — otherwise the re-run refuses the cards it just
+ * created — plus what the old record knew that the source still declares. Pure.
  */
-function newIdsSinceGitHead(tasksFile, currentIds) {
+function recordAfterRun(prevIds, currentIds, syncedIds, complete) {
+  if (complete) return [...currentIds];
+  const cur = new Set(currentIds);
+  return [...new Set([...(prevIds || []).filter((id) => cur.has(id)), ...syncedIds])];
+}
+
+/** Where a consumer's record lives. Pure path derivation; one file per board/source/prefix. */
+function syncRecordPath({ gitCommonDir, homeDir, root, projectId, externalSource, keyPrefix }) {
+  const safe = (x) => String(x || "_").replace(/[^A-Za-z0-9._-]/g, "_");
+  const name = `${safe(projectId)}.${safe(externalSource)}.${safe(keyPrefix)}.json`;
+  if (gitCommonDir) return path.join(gitCommonDir, "ai-dev-workflow", "sync-plane", name);
+  const rootKey = require("node:crypto").createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16);
+  return path.join(homeDir, ".ai-dev-workflow", "sync-plane", rootKey, name);
+}
+
+/** The recorded ids, or null when there is no record yet. */
+function readSyncedIds(file) {
+  try {
+    const data = JSON.parse(fs.readFileSync(file, "utf8"));
+    return Array.isArray(data.ids) ? data.ids : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSyncedIds(file, ids) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ ids: [...ids].sort(), at: new Date().toISOString() }, null, 2) + "\n");
+  fs.renameSync(tmp, file);
+}
+
+function gitOut(args, cwd) {
+  return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+}
+
+/** The checkout's shared git dir (worktrees share one record), or null outside a checkout. */
+function gitCommonDirOf(tasksFile) {
+  try {
+    const dir = path.dirname(path.resolve(tasksFile));
+    return path.resolve(dir, gitOut(["rev-parse", "--git-common-dir"], dir).trim());
+  } catch {
+    return null;
+  }
+}
+
+/** Ids in the source file's committed version, or null when it is untracked / not in git. */
+function headIdsOf(tasksFile) {
   try {
     const abs = path.resolve(tasksFile);
-    const repo = execFileSync("git", ["-C", path.dirname(abs), "rev-parse", "--show-toplevel"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
+    const repo = gitOut(["rev-parse", "--show-toplevel"], path.dirname(abs)).trim();
     const rel = path.relative(repo, abs);
     if (rel.startsWith("..")) return null;
-    const headText = execFileSync("git", ["-C", repo, "show", `HEAD:${rel}`], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    const headIds = new Set(taskIdsFromContent(headText));
-    return currentIds.filter((id) => !headIds.has(id));
+    return taskIdsFromContent(gitOut(["show", `HEAD:${rel}`], repo));
   } catch {
     return null;
   }
@@ -570,6 +715,19 @@ function externalId(cfg, taskId) {
   return `${cfg.keyPrefix}${taskId}`;
 }
 
+// The visible card title (WFC-20260808-02, WFC-20261006-02). Every side numbers its own tasks,
+// so on a shared board several cards are TASK-063; the title must carry the side or they read as
+// one. The short form `BE-063` keeps the number a person searches for. external_id is NOT
+// changed (still `BE-TASK-063`): it is the correlation key, and changing it would recreate cards.
+function cardTitle(keyPrefix, taskId, title) {
+  const shown = keyPrefix ? `${keyPrefix}${taskId.replace(/^TASK-/, "")}` : taskId;
+  return `${shown}: ${title}`;
+}
+
+function cardLabelName(cfg, task) {
+  return cfg.sideLabel || cfg.labelMap[task.category];
+}
+
 function sameLabels(a, b) {
   const sa = new Set(a || []);
   const sb = new Set(b || []);
@@ -587,9 +745,10 @@ async function run() {
   const DRY = args.dryRun;
 
   const cfg = getConfig(args);
-  const tasks = parseTasks(cfg.tasksFile);
+  const tasks = sourceTasks(cfg.tasksFile, cfg.archiveFile);
+  const archived = fs.existsSync(cfg.archiveFile) ? " and its archive" : "";
   log(
-    `Parsed ${tasks.length} task(s) from ${path.relative(cfg.root, cfg.tasksFile) || cfg.tasksFile} ` +
+    `Parsed ${tasks.length} task(s) from ${path.relative(cfg.root, cfg.tasksFile) || cfg.tasksFile}${archived} ` +
       `(source="${cfg.externalSource}"${cfg.keyPrefix ? `, prefix "${cfg.keyPrefix}"` : ", no prefix"})`
   );
   log(`Mode: SYNC${DRY ? " (dry-run)" : ""}\n`);
@@ -601,7 +760,7 @@ async function run() {
     if (!lookups.state[name])
       fail(`Plane project has no state named "${name}". Check STATE_MAP / project states.`);
   }
-  const usedLabels = new Set(tasks.map((t) => cfg.labelMap[t.category]).filter(Boolean));
+  const usedLabels = new Set(tasks.map((t) => cardLabelName(cfg, t)).filter(Boolean));
   for (const name of usedLabels) {
     if (!lookups.label[name])
       fail(`Plane project has no label named "${name}". Create it under Project settings → Labels.`);
@@ -613,20 +772,39 @@ async function run() {
     if (it.external_source === cfg.externalSource && it.external_id) byExt.set(it.external_id, it);
   }
 
-  // Refuse destructive write: an id newly introduced locally that already exists on the board
-  // would UPDATE someone else's card. Detection uses git HEAD of TASK.md when available.
+  // Refuse destructive write: an UPDATE landing on a card nobody attributes to this checkout
+  // would replace another task's content. The baseline is this checkout's record plus the
+  // committed file (see "The overwrite guard's baseline"); with neither, everything is new.
   const currentIds = tasks.map((t) => t.id);
-  const newlyIntroduced = newIdsSinceGitHead(cfg.tasksFile, currentIds);
-  if (newlyIntroduced && newlyIntroduced.length && !args.adopt) {
-    const collisions = newlyIntroduced.filter((id) => byExt.has(externalId(cfg, id)));
-    if (collisions.length) {
-      fail(destructiveWriteRefusal(collisions));
-    }
-  } else if (newlyIntroduced === null && !args.adopt) {
-    log(
-      `Note: cannot compare TASK.md to git HEAD — destructive-write refuse for new ids is skipped. Pass --adopt only for deliberate hand-card adoption.`
-    );
+  const recordPath = syncRecordPath({
+    gitCommonDir: gitCommonDirOf(cfg.tasksFile),
+    homeDir: require("node:os").homedir(),
+    root: cfg.root,
+    projectId: cfg.projectId,
+    externalSource: cfg.externalSource,
+    keyPrefix: cfg.keyPrefix,
+  });
+  const recordIds = readSyncedIds(recordPath);
+  const headIds = unionIds(headIdsOf(cfg.tasksFile), headIdsOf(cfg.archiveFile));
+  const onBoard = new Set(currentIds.filter((id) => byExt.has(externalId(cfg, id))));
+  const collisions = destructiveCollisions(currentIds, { recordIds, headIds }, onBoard);
+  if (collisions.length && !args.adopt) {
+    fail(destructiveWriteRefusal(collisions, { hasRecord: recordIds !== null, recordPath }));
   }
+
+  // Written only by a live run — a dry run vouches for nothing — and also when the run dies
+  // part-way, so a re-run does not refuse the cards it already created.
+  const syncedIds = [];
+  let complete = false;
+  const saveRecord = () => {
+    if (DRY) return;
+    try {
+      writeSyncedIds(recordPath, recordAfterRun(recordIds, currentIds, syncedIds, complete));
+    } catch (e) {
+      log(`Warning: could not write the sync record ${recordPath}: ${e.message}`);
+    }
+  };
+  process.on("exit", saveRecord);
 
   let created = 0,
     updated = 0,
@@ -638,11 +816,11 @@ async function run() {
     const issue = byExt.get(ext);
     const stateId = lookups.state[STATE_MAP[task.status]];
     const priority = PRIORITY_MAP[task.priority] || "none";
-    const labelName = cfg.labelMap[task.category];
+    const labelName = cardLabelName(cfg, task);
     const labelIds = labelName ? [lookups.label[labelName]] : [];
     const html = mdToHtml(buildBody(task));
     const wantText = htmlToPlain(html);
-    // The card title carries the source id (WFC-20260808-02). `external_id` is a
+    // The card title carries the side's short id (see cardTitle). `external_id` is a
     // correlation field trackers do not render, so an id stored only there cannot
     // be quoted, searched, or used to get from the board back to TASK.md.
     //
@@ -652,10 +830,7 @@ async function run() {
     // prefixes while the comparison does not would rename the card back to the
     // bare title on the very next sync, forever — a card that flaps on every run
     // rather than an obvious failure.
-    //
-    // Bare `task.id` ("TASK-037"), not the prefixed `ext` ("ENG-TASK-037"): the
-    // bare form is what the source file uses and what a person searches for.
-    const cardName = `${task.id}: ${task.title}`;
+    const cardName = cardTitle(cfg.keyPrefix, task.id, task.title);
 
     if (!issue) {
       if (DRY) {
@@ -673,6 +848,7 @@ async function run() {
           description_html: html,
         });
         idByExt.set(ext, created2.id);
+        syncedIds.push(task.id);
         log(`CREATED ${ext}  "${cardName}"`);
       }
       created++;
@@ -689,6 +865,7 @@ async function run() {
     if (htmlToPlain(issue.description_html) !== wantText) changes.description_html = html;
 
     if (Object.keys(changes).length === 0) {
+      syncedIds.push(task.id);
       unchanged++;
       continue;
     }
@@ -701,6 +878,7 @@ async function run() {
       log(`UPDATE  ${ext}  ${what}`);
     } else {
       await client.patch(`/issues/${issue.id}/`, changes);
+      syncedIds.push(task.id);
       log(`UPDATED ${ext}  ${what}`);
     }
     updated++;
@@ -739,6 +917,7 @@ async function run() {
     }
   }
 
+  complete = true;
   log(
     `\nDone. created=${created} updated=${updated} deleted=${deleted} unchanged=${unchanged}${DRY ? "  (dry-run — no writes performed)" : ""}`
   );
@@ -767,8 +946,21 @@ module.exports = {
   htmlToPlain,
   parseDependsOn,
   parseTasks,
+  sourceTasks,
+  archivePathFor,
+  unionIds,
   taskIdsFromContent,
   orphanExternalIds,
   ownNamespace,
+  idsToGuard,
+  destructiveCollisions,
+  recordAfterRun,
+  syncRecordPath,
+  readSyncedIds,
+  writeSyncedIds,
+  headIdsOf,
+  gitCommonDirOf,
+  cardTitle,
+  cardLabelName,
   destructiveWriteRefusal,
 };

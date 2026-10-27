@@ -1,40 +1,60 @@
 # Agada Tech Platform Infrastructure — Task Tracker
 
 
-Single source of truth for this side's task state. Ships because this side **participates in the cross-side channel**, and delivery turns each inbound `REQUEST` into a card here ([canonical](../WORKFLOW.md#cross-side-sync-interfacemd--engineering--back-office)) — a participant with nowhere to write the work it is handed dead-ends the protocol.
+Single source of truth for this side's task state. Ships because this side **participates in the cross-side channel**, and delivery turns each inbound `REQUEST` into a card here ([canonical](../WORKFLOW.md#cross-side-sync-interfacemd)) — a participant with nowhere to write the work it is handed dead-ends the protocol.
 
-**Canonical format + rules:** [`../WORKFLOW.md` → Canonical Task Format](../WORKFLOW.md#canonical-task-format). The block below is a convenience mirror. For infra, `Category` = **Topology | Pipeline | Environment | Security**.
+**The format and its rules:** [`../WORKFLOW.md` → Canonical Task Format](../WORKFLOW.md#canonical-task-format). For infra, `Category` = **Topology | Pipeline | Environment | Security**, and a card carries **two fields more**, after `Actor:`:
 
 ```markdown
-### TASK-XXX: [Task Title]
-**Status:** [TODO | IN_PROGRESS | COMPLETED | BLOCKED]  
-**Priority:** [Critical | High | Normal | Low]  
-**Duration:** [X hours/days]  
-**Category:** [Topology | Pipeline | Environment | Security]  
-**Depends On:** [TASK-XXX, …] or None  
-**Source:** [<INT id>, TASK-XXX] (optional — the peer entry or card this serves)  
-**Actor:** `human` · `agent+human` — which hand does what (optional — omit for `agent`; see the canonical format)  
 **Environments:** [local | staging | production | …] — which this touches  
-**Applied:** `no` · `<env> YYYY-MM-DD` once the user has run it (see below)  
-**Review:** `<reviewer> (<tier>)` once the gate has closed
-
-**Description:** …
-**Technical Constraints:** …
-**Acceptance Criteria:** - [ ] …
-**References:** …
+**Applied:** `no` · `<env> YYYY-MM-DD` once the user has run it
 ```
 
-**Two fields this side adds, and why they are not ceremony:**
+**Why they are not ceremony:**
 - **`Environments:`** — the blast radius, on the card, before the work. A change that touches production is not the same task as the identical change against local, and the card is where that is decided rather than discovered.
 - **`Applied:`** — [applying to a live environment is user-gated](../WORKFLOW.md#operating-modes-spec--build), so a card can be finished, reviewed and `COMPLETED` while the change is **not yet real**. Without a field for it, "written" and "running" look identical on a closed card. `COMPLETED` here means the change is written and reviewed; `Applied:` records whether it is live, and where.
 
-> **What does not belong here:** an obligation that renews rather than closes — a certificate expiry, a quarterly key rotation, a paid plan's renewal. A renewal marked `COMPLETED` is a quiet lie, and a markdown file does not fire a reminder. Record the *fact* in [`INFRA.md`](./INFRA.md) and put the reminder wherever this project keeps things that must happen on a date. Same guard, same reasoning as [`../back-office/TASK.md`](../back-office/TASK.md).
+> **What does not belong here:** an obligation that renews rather than closes — a certificate expiry, a quarterly key rotation, a paid plan's renewal. A renewal marked `COMPLETED` is a quiet lie, and a markdown file does not fire a reminder. Record the *fact* in [`INFRA.md`](./INFRA.md) and put the reminder wherever this project keeps things that must happen on a date. Same guard, same reasoning as the legal workspace's tracker, where a project has one.
 
 ---
 
 ## TODO
 
 This agent builds the library. Read the VovoSpaces sources and copy what they do. Do not invent a new pipeline. Sources: `~/workspace/vovo-spaces/.github/workflows/ci.yml`, `~/workspace/vovo-spaces/infra/terraform/`, `~/workspace/vovo-spaces/infra/INFRA.md`, `~/workspace/vovo-spaces/infra/DEPLOYMENT_PLAN.md`. One test server, built and deployed from `main`. No second server and no promotion input. No secrets, account ids, or service ids in this repo. Switching VovoSpaces over to call these files is that repo's TASK-035, not a card here.
+
+### TASK-041: next-cloudflare: pass optional `NEXT_PUBLIC_CLIENT_URL` to the deploy build (v1.1.0)
+**Status:** TODO  
+**Priority:** Normal  
+**Duration:** 1 hour  
+**Category:** Pipeline  
+**Depends On:** None  
+**Source:** VovoSpaces infra IN-062 / FE-INT-20261026-02 (relayed by the user, 2026-10-27)  
+**Environments:** none in this repo; every caller pinned to `@v1`  
+**Applied:** no  
+
+**Description:** VovoSpaces' admin app reads `NEXT_PUBLIC_CLIENT_URL` (the public site's address, for a "View client site" link). Next inlines `NEXT_PUBLIC_*` at build time, and a caller cannot add env to a reusable-workflow call, so only the recipe can pass it.
+
+**Route (decided): a named variable, not a generic pass-through input.**
+- *Why named:* it matches how the recipe already passes `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_SUPABASE_URL`, so a caller sets one repo variable and changes no `ci.yml`.
+- *Rejected — a generic input* (for example multi-line `KEY=VALUE` written to `$GITHUB_ENV`): every caller's `ci.yml` changes, and the recipe takes on an env-injection surface that needs a `NEXT_PUBLIC_` allow-list and tests. Revisit only if a second extra variable is requested, at which point the input pays for itself.
+- *Version:* `v1.1.0`, not `v1.0.x`. This is new behaviour (the recipe reads a new caller variable), not a fix. CHANGELOG's rule allows an additive change in `v1.x`, and VovoSpaces calls `@v1`, so the number does not change what it has to do.
+
+**Technical Constraints:**
+- `.github/workflows/next-cloudflare.yml`, job `frontend-deploy`, step **Build and deploy**, `env:` gains `NEXT_PUBLIC_CLIENT_URL: ${{ vars.NEXT_PUBLIC_CLIENT_URL }}`, beside `NEXT_PUBLIC_API_URL`. Add one *why* comment: it is optional, and unset is an empty string the caller's app treats as "hide the link".
+- **Not** added to **Check build variables are set**. A caller that never sets it must build exactly as today.
+- It reaches every app in the matrix; apps that do not read it ignore it.
+- The `frontend` test job is unchanged (its build uses presence-only placeholders; this variable is not required).
+- Docs: `README.md` next-cloudflare table (a row: `variable`, `NEXT_PUBLIC_CLIENT_URL`, optional, caller variable); `ONBOARDING.md` §1 (optional variable, after `NEXT_PUBLIC_SUPABASE_URL`); `infra/INFRA.md` → Secrets & config (row, class public, optional); `CHANGELOG.md` `v1.1.0`.
+
+**Acceptance Criteria:**
+- [ ] The deploy step passes `NEXT_PUBLIC_CLIENT_URL` from the caller's variables; the presence check is unchanged.
+- [ ] `Test next-cloudflare` is green on GitHub after the push: `frontend` green, `frontend-deploy` skipped. It cannot set the variable, which is the "never set" case the constraint protects.
+- [ ] README, ONBOARDING, INFRA.md and CHANGELOG `v1.1.0` updated.
+- [ ] `v1.1.0` tagged and `v1` moved to it (user-run). Reply to VovoSpaces with the tag, its commit, and "named variable: set repo variable `NEXT_PUBLIC_CLIENT_URL`; no `ci.yml` change".
+
+**References:** `.github/workflows/next-cloudflare.yml` (job `frontend-deploy`, steps **Check build variables are set** and **Build and deploy**); `README.md` → `next-cloudflare`; `ONBOARDING.md` §1; `infra/INFRA.md` → Secrets & config.
+
+---
 
 ## IN_PROGRESS
 

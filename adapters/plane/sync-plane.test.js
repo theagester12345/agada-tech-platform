@@ -392,3 +392,235 @@ test("destructiveWriteRefusal: says the card is one this sync created", () => {
   const msg = destructiveWriteRefusal(["TASK-052"]);
   assert.match(msg, /external_source|this sync|this workflow/i);
 });
+
+// ---------------------------------------------------------------------------
+// The overwrite guard's baseline (WFC-20261009-04, TASK-087).
+//
+// The guard asks "which ids did this edit just introduce?" and used to answer by
+// diffing TASK.md against git HEAD. In client-repo mode TASK.md is untracked, so
+// HEAD had nothing to say — the adapter printed a note and ran UNGUARDED, every
+// side, every run. In a tracked repo the same baseline refused a card synced but
+// not yet committed. The fix: each checkout records the ids it last synced, per
+// board/source/prefix; an id is new unless that record or the committed file
+// vouches for it; with neither, everything is new — the guard refuses, never
+// skips.
+// ---------------------------------------------------------------------------
+
+const {
+  idsToGuard,
+  destructiveCollisions,
+  recordAfterRun,
+  syncRecordPath,
+  readSyncedIds,
+  writeSyncedIds,
+} = require("./sync-plane.js");
+
+test("guard: untracked TASK.md and no record ⇒ every id on the board is a collision (refuse, not skip)", () => {
+  // The client-repo-mode defect: no HEAD, no record. Must not return "nothing to guard".
+  const c = destructiveCollisions(["TASK-001", "TASK-002"], { recordIds: null, headIds: null }, new Set(["TASK-001"]));
+  assert.deepEqual(c, ["TASK-001"]);
+});
+
+test("guard: an id this checkout just synced is not a collision, committed or not", () => {
+  // The routine false refusal: synced, TASK.md not committed yet.
+  const c = destructiveCollisions(["TASK-084"], { recordIds: ["TASK-084"], headIds: ["TASK-001"] }, new Set(["TASK-084"]));
+  assert.deepEqual(c, []);
+});
+
+test("guard: an id absent from the record that the board already carries is refused", () => {
+  const c = destructiveCollisions(["TASK-001", "TASK-090"], { recordIds: ["TASK-001"], headIds: null }, new Set(["TASK-001", "TASK-090"]));
+  assert.deepEqual(c, ["TASK-090"]);
+});
+
+test("guard: an id the committed file already declares is accepted (a teammate synced and committed it)", () => {
+  const c = destructiveCollisions(["TASK-090"], { recordIds: ["TASK-001"], headIds: ["TASK-090"] }, new Set(["TASK-090"]));
+  assert.deepEqual(c, []);
+});
+
+test("guard: a NEW id that is not on the board is a create, never a collision", () => {
+  const c = destructiveCollisions(["TASK-099"], { recordIds: null, headIds: null }, new Set());
+  assert.deepEqual(c, []);
+});
+
+test("idsToGuard: with no baseline at all, every current id must be guarded", () => {
+  assert.deepEqual(idsToGuard(["TASK-001", "TASK-002"], null, null), ["TASK-001", "TASK-002"]);
+});
+
+test("recordAfterRun: a complete run records exactly the source's ids", () => {
+  assert.deepEqual(recordAfterRun(["TASK-001", "TASK-009"], ["TASK-001", "TASK-002"], ["TASK-001", "TASK-002"], true), ["TASK-001", "TASK-002"]);
+});
+
+test("recordAfterRun: a run that failed part-way keeps what it did sync, so a re-run does not refuse its own cards", () => {
+  // prev knew TASK-001; this run created TASK-002 then died before TASK-003.
+  const r = recordAfterRun(["TASK-001"], ["TASK-001", "TASK-002", "TASK-003"], ["TASK-002"], false);
+  assert.deepEqual(r, ["TASK-001", "TASK-002"]);
+});
+
+test("syncRecordPath: inside .git when there is a checkout — never in the tracked tree", () => {
+  const p = syncRecordPath({ gitCommonDir: "/w/p/.git", homeDir: "/h", root: "/w/p", projectId: "abc", externalSource: "tasks-md", keyPrefix: "BE-" });
+  assert.ok(p.startsWith("/w/p/.git/"), p);
+  assert.match(p, /abc/); assert.match(p, /BE-/);
+});
+
+test("syncRecordPath: one record per board, source and prefix", () => {
+  const base = { gitCommonDir: "/w/p/.git", homeDir: "/h", root: "/w/p", projectId: "abc", externalSource: "tasks-md", keyPrefix: "" };
+  const a = syncRecordPath(base);
+  assert.notEqual(a, syncRecordPath({ ...base, keyPrefix: "FE-" }));
+  assert.notEqual(a, syncRecordPath({ ...base, projectId: "other-board" }));
+  assert.notEqual(a, syncRecordPath({ ...base, externalSource: "other" }));
+});
+
+test("syncRecordPath: outside a checkout it lives under the home directory, keyed by root", () => {
+  const p = syncRecordPath({ gitCommonDir: null, homeDir: "/h", root: "/w/p", projectId: "abc", externalSource: "tasks-md", keyPrefix: "" });
+  assert.ok(p.startsWith("/h/"), p);
+  assert.notEqual(p, syncRecordPath({ gitCommonDir: null, homeDir: "/h", root: "/w/q", projectId: "abc", externalSource: "tasks-md", keyPrefix: "" }));
+});
+
+test("readSyncedIds / writeSyncedIds: absent ⇒ null; written ⇒ read back", () => {
+  const os = require("node:os"), fs = require("node:fs"), path = require("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sync-rec-"));
+  const f = path.join(dir, "nested", "rec.json");
+  assert.equal(readSyncedIds(f), null);
+  writeSyncedIds(f, ["TASK-002", "TASK-001"]);
+  assert.deepEqual(readSyncedIds(f).sort(), ["TASK-001", "TASK-002"]);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("client-repo mode, end to end: an untracked TASK.md has no committed baseline, but the record still has a home in .git", () => {
+  const { headIdsOf, gitCommonDirOf } = require("./sync-plane.js");
+  const os = require("node:os"), fs = require("node:fs"), path = require("node:path");
+  const { execFileSync } = require("node:child_process");
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "sync-client-"));
+  execFileSync("git", ["init", "-q", repo]);
+  fs.writeFileSync(path.join(repo, "TASK.md"), "### TASK-001: on the board\n**Status:** TODO\n");
+  fs.writeFileSync(path.join(repo, ".git", "info", "exclude"), "/TASK.md\n");   // the client repo never tracks it
+  const tasks = path.join(repo, "TASK.md");
+  assert.equal(headIdsOf(tasks), null, "an untracked file has no committed version");
+  assert.ok(gitCommonDirOf(tasks).startsWith(fs.realpathSync(repo)) || gitCommonDirOf(tasks).startsWith(repo));
+  // ...so with no record either, the card already on the board is REFUSED — the old code skipped here.
+  assert.deepEqual(destructiveCollisions(["TASK-001"], { recordIds: null, headIds: headIdsOf(tasks) }, new Set(["TASK-001"])), ["TASK-001"]);
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
+test("destructiveWriteRefusal: with no record, says so and names the one-time --adopt, not 'commit it'", () => {
+  const msg = destructiveWriteRefusal(["TASK-001"], { hasRecord: false, recordPath: "/w/p/.git/ai-dev-workflow/sync-plane/x.json" });
+  assert.match(msg, /no record/i);
+  assert.match(msg, /--adopt/);
+  assert.match(msg, /x\.json/);
+  assert.doesNotMatch(msg, /Commit it/);
+});
+
+// ---------------------------------------------------------------------------
+// Card title + label on a SHARED board (WFC-20261006-02).
+// Several sides number their tasks independently, so every side has a TASK-063.
+// A bare `TASK-063:` title made three cards look identical, and a category label
+// (Documentation → Infrastructure) made a backend card read as infra's.
+// ---------------------------------------------------------------------------
+
+test("cardTitle: a prefixed consumer shows its short namespaced id", () => {
+  const { cardTitle } = require("./sync-plane.js");
+  assert.strictEqual(cardTitle("BE-", "TASK-063", "Remove docs"), "BE-063: Remove docs");
+  assert.strictEqual(cardTitle("FE-", "TASK-063", "Remove docs"), "FE-063: Remove docs");
+});
+
+test("cardTitle: two sides' same-numbered tasks never share a title", () => {
+  const { cardTitle } = require("./sync-plane.js");
+  assert.notStrictEqual(cardTitle("BE-", "TASK-063", "x"), cardTitle("IN-", "TASK-063", "x"));
+});
+
+test("cardTitle: an unprefixed consumer keeps the source id as-is", () => {
+  const { cardTitle } = require("./sync-plane.js");
+  assert.strictEqual(cardTitle("", "TASK-063", "Remove docs"), "TASK-063: Remove docs");
+});
+
+test("cardTitle: still findable by the number a person searches for", () => {
+  const { cardTitle } = require("./sync-plane.js");
+  assert.match(cardTitle("BE-", "TASK-007", "x"), /\b007\b/);
+});
+
+test("cardLabelName: a side label overrides the category mapping", () => {
+  const { cardLabelName } = require("./sync-plane.js");
+  const cfg = { sideLabel: "Backend", labelMap: { Documentation: "Infrastructure" } };
+  assert.strictEqual(cardLabelName(cfg, { category: "Documentation" }), "Backend");
+  assert.strictEqual(cardLabelName(cfg, { category: "Infrastructure" }), "Backend");
+});
+
+test("cardLabelName: without a side label the category mapping still applies", () => {
+  const { cardLabelName } = require("./sync-plane.js");
+  const cfg = { sideLabel: "", labelMap: { Documentation: "Infrastructure" } };
+  assert.strictEqual(cardLabelName(cfg, { category: "Documentation" }), "Infrastructure");
+  assert.strictEqual(cardLabelName(cfg, { category: "Nope" }), undefined);
+});
+
+// ---------------------------------------------------------------------------
+// The archive is part of the source (TASK-097).
+//
+// Old COMPLETED cards move from TASK.md to TASK_ARCHIVE.md beside it, so a session's
+// start-up read stops paying for history. The sync must read both files as ONE source:
+// removal propagates per source, so a card that only moved files would otherwise be
+// deleted from the board.
+// ---------------------------------------------------------------------------
+
+const CARD = (n, status, extra = "") => `### TASK-${n}: Card ${n}
+**Status:** ${status}  
+**Priority:** Normal  
+**Category:** Template  
+**Depends On:** None
+${extra}
+**Description:** body of card ${n}.
+`;
+
+function withBoard(live, archive, fn) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tasks-"));
+  const t = path.join(dir, "TASK.md");
+  fs.writeFileSync(t, live);
+  if (archive !== null) fs.writeFileSync(path.join(dir, "TASK_ARCHIVE.md"), archive);
+  try { return fn(t, dir); } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
+const BEFORE = `# Board\n\n## TODO\n\n${CARD("003", "TODO")}\n## COMPLETED\n\n${CARD("002", "COMPLETED")}\n${CARD("001", "COMPLETED")}\n---\n\n_Last Updated: x_\n`;
+const AFTER_LIVE = `# Board\n\n## TODO\n\n${CARD("003", "TODO")}\n## COMPLETED\n\n${CARD("002", "COMPLETED")}\n---\n\n_Last Updated: x_\n`;
+const AFTER_ARCHIVE = `# Task archive\n\n## COMPLETED\n\n${CARD("001", "COMPLETED")}`;
+
+test("sourceTasks: an archived card is still part of the source", () => {
+  const { sourceTasks } = require("./sync-plane.js");
+  const ids = withBoard(AFTER_LIVE, AFTER_ARCHIVE, (t) => sourceTasks(t).map((x) => x.id).sort());
+  assert.deepStrictEqual(ids, ["TASK-001", "TASK-002", "TASK-003"]);
+});
+
+test("sourceTasks: archiving a card proposes no deletion", () => {
+  const { sourceTasks } = require("./sync-plane.js");
+  const board = withBoard(BEFORE, null, (t) => sourceTasks(t).map((x) => x.id));
+  const wanted = withBoard(AFTER_LIVE, AFTER_ARCHIVE, (t) => sourceTasks(t).map((x) => x.id));
+  assert.deepStrictEqual(orphanExternalIds(board, wanted, ""), []);
+});
+
+test("sourceTasks: a moved card mirrors byte-identically, so a re-sync is unchanged", () => {
+  const { sourceTasks } = require("./sync-plane.js");
+  const pick = (t) => Object.fromEntries(sourceTasks(t).map((x) => [x.id, [x.block.trimEnd(), x.status]]));
+  const a = withBoard(BEFORE, null, pick);
+  const b = withBoard(AFTER_LIVE, AFTER_ARCHIVE, pick);
+  assert.deepStrictEqual(b, a);
+});
+
+test("sourceTasks: no archive file is the same as an empty one", () => {
+  const { sourceTasks } = require("./sync-plane.js");
+  assert.strictEqual(withBoard(BEFORE, null, (t) => sourceTasks(t).length), 3);
+});
+
+test("sourceTasks: an id in both TASK.md and the archive is refused before any write", () => {
+  const { spawnSync } = require("node:child_process");
+  withBoard(BEFORE, AFTER_ARCHIVE, (t) => {
+    const r = spawnSync(process.execPath, ["-e", `require(${JSON.stringify(path.join(__dirname, "sync-plane.js"))}).sourceTasks(${JSON.stringify(t)})`], { encoding: "utf8" });
+    assert.notStrictEqual(r.status, 0);
+    assert.match(r.stderr, /TASK-001/);
+    assert.match(r.stderr, /TASK_ARCHIVE\.md/);
+  });
+});
+
+test("unionIds: the committed ids of both files vouch; null only when neither is tracked", () => {
+  const { unionIds } = require("./sync-plane.js");
+  assert.strictEqual(unionIds(null, null), null);
+  assert.deepStrictEqual(unionIds(["TASK-002"], null), ["TASK-002"]);
+  assert.deepStrictEqual(unionIds(["TASK-002"], ["TASK-001"]).sort(), ["TASK-001", "TASK-002"]);
+});
