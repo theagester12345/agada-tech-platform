@@ -144,4 +144,8 @@ jobs:
           NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          # Optional, so it is not in the check above. Unset arrives as an
+          # empty string, and an app that reads it must treat that as "off"
+          # (VovoSpaces' admin hides its "View client site" link).
+          NEXT_PUBLIC_CLIENT_URL: ${{ vars.NEXT_PUBLIC_CLIENT_URL }}
         run: npm run deploy:cf --workspace=${{ inputs.workspace_scope }}/${{ matrix.app }}

@@ -22,8 +22,45 @@ Single source of truth for this side's task state. Ships because this side **par
 
 This agent builds the library. Read the VovoSpaces sources and copy what they do. Do not invent a new pipeline. Sources: `~/workspace/vovo-spaces/.github/workflows/ci.yml`, `~/workspace/vovo-spaces/infra/terraform/`, `~/workspace/vovo-spaces/infra/INFRA.md`, `~/workspace/vovo-spaces/infra/DEPLOYMENT_PLAN.md`. One test server, built and deployed from `main`. No second server and no promotion input. No secrets, account ids, or service ids in this repo. Switching VovoSpaces over to call these files is that repo's TASK-035, not a card here.
 
-### TASK-041: next-cloudflare: pass optional `NEXT_PUBLIC_CLIENT_URL` to the deploy build (v1.1.0)
+### TASK-042: Verify and release next-cloudflare `v1.1.0` on GitHub
 **Status:** TODO  
+**Priority:** Normal  
+**Duration:** 15 minutes  
+**Category:** Pipeline  
+**Depends On:** TASK-041  
+**Source:** TASK-041  
+**Actor:** `agent+human` — the user pushes and tags; the agent reads the run and the tags and drafts the reply  
+**Environments:** the GitHub repo; every caller pinned to `@v1`  
+**Applied:** no  
+
+**Description:** The proof TASK-041 cannot make itself: its change on GitHub, and the release. Criteria copied verbatim from TASK-041.
+
+**Acceptance Criteria:**
+- [ ] `Test next-cloudflare` is green on GitHub after the push: `frontend` green, `frontend-deploy` skipped. It cannot set the variable, which is the "never set" case the constraint protects.
+- [ ] `v1.1.0` tagged and `v1` moved to it (user-run). Reply to VovoSpaces with the tag, its commit, and "named variable: set repo variable `NEXT_PUBLIC_CLIENT_URL`; no `ci.yml` change".
+
+**Actor steps:**
+1. User: `git push` (the push touches `next-cloudflare.yml`, so `Test next-cloudflare` starts on its own).
+2. Agent: read the run through `STACK.md` → Read-only ops; both jobs as above.
+3. User, only after step 2 is green: `git tag -a v1.1.0 -m "v1.1.0"`, `git tag -f v1 v1.1.0`, `git push origin v1.1.0`, `git push -f origin v1`.
+4. Agent: confirm both tags with `git ls-remote`, date the CHANGELOG entry, close this card, and draft the reply for VovoSpaces.
+
+**References:** TASK-041; `CHANGELOG.md` → v1.1.0; `STACK.md` → User-run.
+
+---
+
+## IN_PROGRESS
+
+_None._
+
+## BLOCKED
+
+_None._
+
+## COMPLETED
+
+### TASK-041: next-cloudflare: pass optional `NEXT_PUBLIC_CLIENT_URL` to the deploy build (v1.1.0)
+**Status:** COMPLETED  
 **Priority:** Normal  
 **Duration:** 1 hour  
 **Category:** Pipeline  
@@ -31,6 +68,9 @@ This agent builds the library. Read the VovoSpaces sources and copy what they do
 **Source:** VovoSpaces infra IN-062 / FE-INT-20261026-02 (relayed by the user, 2026-10-27)  
 **Environments:** none in this repo; every caller pinned to `@v1`  
 **Applied:** no  
+**Questions:** none  
+**Review:** self-review (medium) — 0 material / 5 advisory, 1 round  
+**Completed:** 2026-10-27  
 
 **Description:** VovoSpaces' admin app reads `NEXT_PUBLIC_CLIENT_URL` (the public site's address, for a "View client site" link). Next inlines `NEXT_PUBLIC_*` at build time, and a caller cannot add env to a reusable-workflow call, so only the recipe can pass it.
 
@@ -47,24 +87,16 @@ This agent builds the library. Read the VovoSpaces sources and copy what they do
 - Docs: `README.md` next-cloudflare table (a row: `variable`, `NEXT_PUBLIC_CLIENT_URL`, optional, caller variable); `ONBOARDING.md` §1 (optional variable, after `NEXT_PUBLIC_SUPABASE_URL`); `infra/INFRA.md` → Secrets & config (row, class public, optional); `CHANGELOG.md` `v1.1.0`.
 
 **Acceptance Criteria:**
-- [ ] The deploy step passes `NEXT_PUBLIC_CLIENT_URL` from the caller's variables; the presence check is unchanged.
-- [ ] `Test next-cloudflare` is green on GitHub after the push: `frontend` green, `frontend-deploy` skipped. It cannot set the variable, which is the "never set" case the constraint protects.
-- [ ] README, ONBOARDING, INFRA.md and CHANGELOG `v1.1.0` updated.
-- [ ] `v1.1.0` tagged and `v1` moved to it (user-run). Reply to VovoSpaces with the tag, its commit, and "named variable: set repo variable `NEXT_PUBLIC_CLIENT_URL`; no `ci.yml` change".
+- [x] The deploy step passes `NEXT_PUBLIC_CLIENT_URL` from the caller's variables; the presence check is unchanged.
+- [ ] `Test next-cloudflare` is green on GitHub after the push: `frontend` green, `frontend-deploy` skipped. It cannot set the variable, which is the "never set" case the constraint protects. — moved to TASK-042.
+- [x] README, ONBOARDING, INFRA.md and CHANGELOG `v1.1.0` updated.
+- [ ] `v1.1.0` tagged and `v1` moved to it (user-run). Reply to VovoSpaces with the tag, its commit, and "named variable: set repo variable `NEXT_PUBLIC_CLIENT_URL`; no `ci.yml` change". — moved to TASK-042.
+
+**Proof:** the two criteria that need the user's push and tag are on TASK-042.
 
 **References:** `.github/workflows/next-cloudflare.yml` (job `frontend-deploy`, steps **Check build variables are set** and **Build and deploy**); `README.md` → `next-cloudflare`; `ONBOARDING.md` §1; `infra/INFRA.md` → Secrets & config.
 
 ---
-
-## IN_PROGRESS
-
-_None._
-
-## BLOCKED
-
-_None._
-
-## COMPLETED
 
 ### TASK-040: Protect `main` on the platform repo
 **Status:** COMPLETED  

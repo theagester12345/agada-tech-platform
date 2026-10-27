@@ -71,6 +71,7 @@ Names only. Values stay in each caller.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public | caller Actions secret | `next-cloudflare` deploy build |
 | `NEXT_PUBLIC_API_URL` | public | caller Actions variable | same |
 | `NEXT_PUBLIC_SUPABASE_URL` | public | caller Actions variable | same |
+| `NEXT_PUBLIC_CLIENT_URL` | public, optional | caller Actions variable, only where an app reads it | same. Not in the presence check; unset is empty |
 | `CLOUDFLARE_ACCOUNT_ID` | identifier | caller Actions variable | same |
 | `DEPLOY_FRONTEND` | config | caller variable, mapped to the `deploy` input | caller, not this repo |
 | `SUPABASE_ACCESS_TOKEN` | secret | caller Terraform env | Supabase provider |
@@ -96,4 +97,4 @@ If a project has **no `infra/` directory**, don't create one just for this — t
 
 ---
 
-_Last Updated: 2026-10-05_
+_Last Updated: 2026-10-27_

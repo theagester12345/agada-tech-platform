@@ -17,6 +17,7 @@ Secrets, then variables. Deploy stays off until both `DEPLOY_*` variables are `t
 | 5 | variable | `CLOUDFLARE_ACCOUNT_ID` | `next-cloudflare` |
 | 6 | variable | `NEXT_PUBLIC_API_URL` | `next-cloudflare` |
 | 7 | variable | `NEXT_PUBLIC_SUPABASE_URL` | `next-cloudflare` |
+| optional | variable | `NEXT_PUBLIC_CLIENT_URL` | `next-cloudflare`, only for an app that reads it. Leave unset otherwise |
 | 8 | variable | `DEPLOY_BACKEND` | caller, mapped to `deploy` |
 | 9 | variable | `DEPLOY_FRONTEND` | caller, mapped to `deploy` |
 

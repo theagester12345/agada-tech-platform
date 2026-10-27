@@ -112,6 +112,7 @@ jobs:
 | secret | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | — | Inlined at deploy build time. Needed only when `deploy` is true |
 | variable | `NEXT_PUBLIC_API_URL` | — | Caller variable. No default in this repo |
 | variable | `NEXT_PUBLIC_SUPABASE_URL` | — | Caller variable. No default in this repo |
+| variable | `NEXT_PUBLIC_CLIENT_URL` | unset | Optional. Inlined at deploy build time for an app that reads it (the public site's address). Unset is an empty string; not checked |
 | variable | `CLOUDFLARE_ACCOUNT_ID` | — | Caller variable |
 
 The test job's Supabase values are presence-only placeholders for prerender. A real deploy uses the caller.

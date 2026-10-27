@@ -9,6 +9,12 @@ This is the **platform** version — the pin callers use (`@v1`, `?ref=v1`). It 
 - `v1` is a moving tag. It always points at the latest `v1.x`.
 - A caller that must not move pins the exact tag (`@v1.0.0`, `?ref=v1.0.0`).
 
+## v1.1.0 — unreleased
+
+Additive. No input, output or secret changed, and a caller that sets nothing builds as before.
+
+- `next-cloudflare` passes the caller's optional repo variable `NEXT_PUBLIC_CLIENT_URL` to the deploy build of every app in the matrix. It is not in the presence check: unset arrives as an empty string, and an app that reads it treats that as off. Set the variable; no `ci.yml` change.
+
 ## v1.0.1 — 2026-10-05
 
 Fix. No input, output, secret or module variable changed.
